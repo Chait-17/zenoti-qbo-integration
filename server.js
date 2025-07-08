@@ -17,7 +17,7 @@
              'Content-Type': 'application/json'
            }
          });
-         const centers = response.data.centers || response.data; // Adjust based on Zenoti response structure
+         const centers = response.data.centers || response.data; // Adjust based on Zenoti response
          if (centers && Array.isArray(centers)) {
            res.json({ centers });
          } else {
@@ -30,12 +30,53 @@
      });
 
      app.post('/api/auth-link', async (req, res) => {
-       // Implement Codat auth link logic
-       res.json({ error: 'Not implemented' });
+       const { apiKey, companyName, centerId } = req.body;
+       if (!apiKey || !companyName || !centerId) {
+         return res.status(400).json({ error: 'Missing API key, company name, or center ID' });
+       }
+
+       try {
+         const codatApiKey = process.env.CODAT_API_KEY;
+         if (!codatApiKey) {
+           return res.status(500).json({ error: 'Codat API key not configured' });
+         }
+
+         // Create a Codat company
+         const companyResponse = await axios.post(
+           'https://api.codat.io/companies',
+           { name: companyName },
+           {
+             headers: {
+               'Authorization': `Bearer ${codatApiKey}`,
+               'Content-Type': 'application/json'
+             }
+           }
+         );
+         const companyId = companyResponse.data.id;
+
+         // Generate QuickBooks OAuth link
+         const authResponse = await axios.post(
+           `https://api.codat.io/companies/${companyId}/connections`,
+           {
+             platformKey: 'qbo' // QuickBooks Online platform key
+           },
+           {
+             headers: {
+               'Authorization': `Bearer ${codatApiKey}`,
+               'Content-Type': 'application/json'
+             }
+           }
+         );
+         const authUrl = authResponse.data.data.authUri;
+
+         res.json({ authUrl });
+       } catch (error) {
+         console.error('Codat API error:', error.response?.data || error.message);
+         res.status(500).json({ error: 'Failed to generate auth link: ' + (error.response?.data?.error || error.message) });
+       }
      });
 
      app.post('/api/sync', async (req, res) => {
-       // Implement sync logic
        res.json({ error: 'Not implemented' });
      });
 
