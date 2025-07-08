@@ -17,7 +17,7 @@
              'Content-Type': 'application/json'
            }
          });
-         const centers = response.data.centers || response.data; // Adjust based on Zenoti response
+         const centers = response.data.centers || response.data;
          if (centers && Array.isArray(centers)) {
            res.json({ centers });
          } else {
@@ -47,7 +47,7 @@
            { name: companyName },
            {
              headers: {
-               'Authorization': `Bearer ${codatApiKey}`,
+               'Authorization': `Basic ${codatApiKey}`,
                'Content-Type': 'application/json'
              }
            }
@@ -58,11 +58,11 @@
          const authResponse = await axios.post(
            `https://api.codat.io/companies/${companyId}/connections`,
            {
-             platformKey: 'qbo' // QuickBooks Online platform key
+             platformKey: 'qbo'
            },
            {
              headers: {
-               'Authorization': `Bearer ${codatApiKey}`,
+               'Authorization': `Basic ${codatApiKey}`,
                'Content-Type': 'application/json'
              }
            }
@@ -81,3 +81,4 @@
      });
 
      module.exports = app;
+     
