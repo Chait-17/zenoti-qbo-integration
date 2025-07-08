@@ -1,3 +1,4 @@
+
      const express = require('express');
      const axios = require('axios');
      const app = express();
@@ -62,7 +63,7 @@
          const authResponse = await axios.post(
            `https://api.codat.io/companies/${companyId}/connections`,
            {
-             platformKey: 'qhyg' // Updated to correct platformKey
+             platformKey: 'qhyg'
            },
            {
              headers: {
@@ -71,7 +72,7 @@
              }
            }
          );
-         const authUrl = authResponse.data.data.authUri;
+         const authUrl = authResponse.data.linkUrl; // Updated to use linkUrl
          console.log('Auth URL generated:', authUrl);
 
          res.json({ authUrl });
