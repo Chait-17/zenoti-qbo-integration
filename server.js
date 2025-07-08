@@ -37,11 +37,13 @@
 
        try {
          const codatApiKey = process.env.CODAT_API_KEY;
+         console.log('CODAT_API_KEY:', codatApiKey);
          if (!codatApiKey) {
            return res.status(500).json({ error: 'Codat API key not configured' });
          }
 
          // Create a Codat company
+         console.log('Creating Codat company for:', companyName);
          const companyResponse = await axios.post(
            'https://api.codat.io/companies',
            { name: companyName },
@@ -53,12 +55,14 @@
            }
          );
          const companyId = companyResponse.data.id;
+         console.log('Company created, ID:', companyId);
 
          // Generate QuickBooks OAuth link
+         console.log('Generating QBO connection for company:', companyId);
          const authResponse = await axios.post(
            `https://api.codat.io/companies/${companyId}/connections`,
            {
-             platformKey: 'qbo'
+             platformKey: 'qhyg' // Updated to correct platformKey
            },
            {
              headers: {
@@ -68,11 +72,13 @@
            }
          );
          const authUrl = authResponse.data.data.authUri;
+         console.log('Auth URL generated:', authUrl);
 
          res.json({ authUrl });
        } catch (error) {
+         const errorMessage = error.response?.data?.error || error.message;
          console.error('Codat API error:', error.response?.data || error.message);
-         res.status(500).json({ error: 'Failed to generate auth link: ' + (error.response?.data?.error || error.message) });
+         res.status(500).json({ error: `Failed to generate auth link: ${errorMessage}` });
        }
      });
 
@@ -81,4 +87,3 @@
      });
 
      module.exports = app;
-     
