@@ -105,6 +105,7 @@ app.post('/api/sync', async (req, res) => {
       });
       const pageData = companiesResponse.data.results || [];
       allCompanies = allCompanies.concat(pageData);
+      console.log(`Fetched page ${page}, companies: ${pageData.map(c => c.name).join(', ')}`);
       hasMore = companiesResponse.data.page < companiesResponse.data.pageCount;
       page++;
     }
