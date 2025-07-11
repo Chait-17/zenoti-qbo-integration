@@ -88,6 +88,13 @@ app.post('/api/sync', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  // Validate centerId as a UUID
+  const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  if (!uuidRegex.test(centerId)) {
+    return res.status(400).json({ error: `Invalid centerId: ${centerId}. Must be a valid UUID.` });
+  }
+  console.log('Using centerId:', centerId);
+
   try {
     const codatApiKey = process.env.CODAT_API_KEY;
     if (!codatApiKey) {
@@ -231,7 +238,7 @@ app.post('/api/sync', async (req, res) => {
           } catch (createError) {
             console.error(`Failed to create account ${accountName}:`, {
               status: createError.response?.status,
-              data: createError.response?.data
+              data: createError.response?.data || createError.message
             });
             account = existingAccounts.find(a => a.name === accountName) || { id: null };
             console.log(`Falling back to existing or skipping account: ${accountName}`);
