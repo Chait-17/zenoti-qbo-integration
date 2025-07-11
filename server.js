@@ -88,12 +88,12 @@ app.post('/api/sync', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  // Validate centerId as a UUID
+  // Validate and log centerId
   const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
   if (!uuidRegex.test(centerId)) {
     return res.status(400).json({ error: `Invalid centerId: ${centerId}. Must be a valid UUID.` });
   }
-  console.log('Using centerId:', centerId);
+  console.log('Using centerId for Zenoti API:', centerId);
 
   try {
     const codatApiKey = process.env.CODAT_API_KEY;
@@ -205,40 +205,37 @@ app.post('/api/sync', async (req, res) => {
             throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
           }
           console.log('Payload for account creation:', {
-            account: {
-              name: accountName,
-              description: `Account for ${accountName}`,
-              fullyQualifiedCategory: category,
-              fullyQualifiedName: accountName,
-              currency: 'USD',
-              currentBalance: 0,
-              type: type,
-              status: 'Active'
-            }
+            name: accountName,
+            description: `Account for ${accountName}`,
+            fullyQualifiedCategory: category,
+            fullyQualifiedName: accountName,
+            currency: 'USD',
+            currentBalance: 0,
+            type: type,
+            status: 'Active'
           });
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
-                account: {
-                  name: accountName,
-                  description: `Account for ${accountName}`,
-                  fullyQualifiedCategory: category,
-                  fullyQualifiedName: accountName,
-                  currency: 'USD',
-                  currentBalance: 0,
-                  type: type,
-                  status: 'Active'
-                }
+                name: accountName,
+                description: `Account for ${accountName}`,
+                fullyQualifiedCategory: category,
+                fullyQualifiedName: accountName,
+                currency: 'USD',
+                currentBalance: 0,
+                type: type,
+                status: 'Active'
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
-            account = createResponse.data.data;
-            console.log(`Created account: ${accountName}, ID: ${account.id}`);
+            account = createResponse.data?.data || createResponse.data; // Handle varying response structures
+            console.log(`Created account: ${accountName}, ID: ${account.id}, Full response: ${JSON.stringify(createResponse.data)}`);
           } catch (createError) {
             console.error(`Failed to create account ${accountName}:`, {
               status: createError.response?.status,
-              data: createError.response?.data || createError.message
+              data: createError.response?.data || createError.message,
+              config: createError.config?.data
             });
             account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName) || { id: null };
             console.log(`Falling back to existing or skipping account: ${accountName}`);
