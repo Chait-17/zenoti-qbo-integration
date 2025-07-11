@@ -130,6 +130,21 @@ app.post('/api/sync', async (req, res) => {
     if (!company) throw new Error(`Company '${companyName}' not found in Codat. Available: ${allCompanies.map(c => c.name).join(', ')}`);
     const companyId = company.id;
 
+    // Fetch connection details (assuming first connection for simplicity)
+    const connectionsResponse = await axios.get(
+      `https://api.codat.io/companies/${companyId}/connections`,
+      { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
+    );
+    const connectionId = connectionsResponse.data.results[0]?.id;
+    if (!connectionId) throw new Error('No connection found for company');
+
+    // Fetch valid account creation options
+    const optionsResponse = await axios.get(
+      `https://api.codat.io/companies/${companyId}/connections/${connectionId}/options/chartOfAccounts`,
+      { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
+    );
+    const validCategories = optionsResponse.data.fullyQualifiedCategory.options.map(opt => opt.value);
+
     // Fetch and process accounts
     let accountMap;
     try {
@@ -157,23 +172,39 @@ app.post('/api/sync', async (req, res) => {
       for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections })) {
         let account = existingAccounts.find(a => a.name === accountName && a.accountType === type);
         if (!account) {
-          const createResponse = await axios.post(
-            `https://api.codat.io/companies/${companyId}/data/accounts`,
-            {
-              account: {
-                name: accountName,
-                accountType: type,
-                status: 'Active',
-                fullyQualifiedName: accountName,
-                classification: type === 'Income' ? 'Revenue' : type === 'Current Liability' ? 'Liability' : 'Asset'
-              }
-            },
-            { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
-          );
-          account = createResponse.data.data;
-          console.log(`Created account: ${accountName}, ID: ${account.id}`);
+          console.log(`Attempting to create account: ${accountName}, Type: ${type}, Company ID: ${companyId}`);
+          const category = validCategories.find(cat => cat.startsWith(type));
+          if (!category) throw new Error(`No valid category found for type ${type}`);
+          try {
+            const createResponse = await axios.post(
+              `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
+              {
+                account: {
+                  nominalCode: '611', // Example, adjust as needed
+                  name: accountName,
+                  description: `Account for ${accountName}`,
+                  fullyQualifiedCategory: category,
+                  fullyQualifiedName: accountName,
+                  currency: 'USD',
+                  currentBalance: 0,
+                  type: type,
+                  status: 'Active'
+                }
+              },
+              { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
+            );
+            account = createResponse.data.data;
+            console.log(`Created account: ${accountName}, ID: ${account.id}`);
+          } catch (createError) {
+            console.error(`Failed to create account ${accountName}:`, {
+              status: createError.response?.status,
+              data: createError.response?.data
+            });
+            account = existingAccounts.find(a => a.name === accountName) || { id: null };
+            console.log(`Falling back to existing or skipping account: ${accountName}`);
+          }
         }
-        accountMap[accountName] = account.id;
+        accountMap[accountName] = account.id || accountMap[accountName] || null;
       }
     } catch (accountsError) {
       console.error('Accounts error:', {
