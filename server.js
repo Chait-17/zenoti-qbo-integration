@@ -101,23 +101,29 @@ app.post('/api/sync', async (req, res) => {
     while (nextUrl) {
       console.log('Fetching URL:', nextUrl); // Log the exact URL being fetched
       try {
-        const companiesResponse = await axios.get(nextUrl, {
+        const companiesResponse = await axios({
+          method: 'get', // Explicitly set method to GET
+          url: nextUrl,
           headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' }
         });
         const pageData = companiesResponse.data.results || [];
         allCompanies = allCompanies.concat(pageData);
-        console.log(`Fetched page, companies count: ${pageData.length}, total so far: ${allCompanies.length}`);
+        console.log(`Fetched page, companies count: ${pageData.length}, total so far: ${allCompanies.length}, status: ${companiesResponse.status}`);
         console.log(`Page companies: ${pageData.map(c => c.name).join(', ')}`);
         nextUrl = companiesResponse.data._links?.next?.href;
         if (nextUrl && !nextUrl.startsWith('http')) {
           nextUrl = `https://api.codat.io${nextUrl}`; // Convert relative URL to absolute
         }
       } catch (error) {
-        console.error('Error fetching companies page, URL:', nextUrl, error.response?.data || error.message);
+        console.error('Error fetching companies page, URL:', nextUrl, 'Status:', error.response?.status, error.response?.data || error.message);
         if (error.response?.status === 429) { // Rate limit
           console.log('Rate limit hit, waiting before retry...');
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
+        }
+        if (error.response?.status === 405) { // Method Not Allowed
+          console.log('Skipping invalid URL due to Method Not Allowed');
+          nextUrl = null; // Stop pagination on 405
         }
         throw error;
       }
