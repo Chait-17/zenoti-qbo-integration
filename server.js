@@ -178,6 +178,7 @@ app.post('/api/sync', async (req, res) => {
         { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
       );
       const existingAccounts = accountsResponse.data.results || [];
+      console.log('Existing accounts:', existingAccounts.map(a => ({ name: a.name, type: a.accountType })));
       const requiredAccounts = {
         sales: {
           'Zenoti service sales': { type: 'Income' },
@@ -195,7 +196,8 @@ app.post('/api/sync', async (req, res) => {
       };
       accountMap = {};
       for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections })) {
-        let account = existingAccounts.find(a => a.name === accountName && a.accountType === type);
+        const normalizedName = accountName.toLowerCase().trim();
+        let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName && a.accountType === type);
         if (!account) {
           console.log(`Attempting to create account: ${accountName}, Type: ${type}, Company ID: ${companyId}`);
           const category = categoryMap[type];
@@ -234,9 +236,13 @@ app.post('/api/sync', async (req, res) => {
               status: createError.response?.status,
               data: createError.response?.data || createError.message
             });
-            account = existingAccounts.find(a => a.name === accountName) || { id: null };
+            account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName) || { id: null };
             console.log(`Falling back to existing or skipping account: ${accountName}`);
           }
+        } else {
+          console.log(`Account already exists: ${accountName}, ID: ${account.id}`);
+          accountMap[accountName] = account.id;
+          continue;
         }
         accountMap[accountName] = account.id || accountMap[accountName] || null;
       }
