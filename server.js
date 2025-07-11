@@ -153,9 +153,13 @@ app.post('/api/sync', async (req, res) => {
         status: optionsError.response?.status,
         data: optionsError.response?.data
       });
-      // Fallback to default categories if options endpoint fails
-      validCategories = ['Income', 'Current Liability', 'Current Asset'].map(type => `${type}`);
-      console.log('Using fallback categories:', validCategories);
+      // Fallback to QuickBooks-compatible categories
+      validCategories = {
+        'Income': 'Revenue',
+        'Current Liability': 'Liabilities.Current',
+        'Current Asset': 'Assets.Current'
+      };
+      console.log('Using fallback categories:', Object.keys(validCategories));
     }
 
     // Fetch and process accounts
@@ -186,7 +190,18 @@ app.post('/api/sync', async (req, res) => {
         let account = existingAccounts.find(a => a.name === accountName && a.accountType === type);
         if (!account) {
           console.log(`Attempting to create account: ${accountName}, Type: ${type}, Company ID: ${companyId}`);
-          const category = validCategories.find(cat => cat.startsWith(type)) || `${type}`;
+          const category = typeof validCategories === 'object' ? validCategories[type] || `${type}` : validCategories.find(cat => cat.startsWith(type)) || `${type}`;
+          console.log('Payload for account creation:', {
+            nominalCode: '611',
+            name: accountName,
+            description: `Account for ${accountName}`,
+            fullyQualifiedCategory: category,
+            fullyQualifiedName: accountName,
+            currency: 'USD',
+            currentBalance: 0,
+            type: type,
+            status: 'Active'
+          });
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
