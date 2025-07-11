@@ -203,33 +203,29 @@ app.post('/api/sync', async (req, res) => {
             throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
           }
           console.log('Payload for account creation:', {
-            account: {
-              nominalCode: '611',
-              name: accountName,
-              description: `Account for ${accountName}`,
-              fullyQualifiedCategory: category,
-              fullyQualifiedName: accountName,
-              currency: 'USD',
-              currentBalance: 0,
-              type: type,
-              status: 'Active'
-            }
+            nominalCode: '611',
+            name: accountName,
+            description: `Account for ${accountName}`,
+            fullyQualifiedCategory: category,
+            fullyQualifiedName: accountName,
+            currency: 'USD',
+            currentBalance: 0,
+            type: type,
+            status: 'Active'
           });
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
-                account: {
-                  nominalCode: '611',
-                  name: accountName,
-                  description: `Account for ${accountName}`,
-                  fullyQualifiedCategory: category,
-                  fullyQualifiedName: accountName,
-                  currency: 'USD',
-                  currentBalance: 0,
-                  type: type,
-                  status: 'Active'
-                }
+                nominalCode: '611',
+                name: accountName,
+                description: `Account for ${accountName}`,
+                fullyQualifiedCategory: category,
+                fullyQualifiedName: accountName,
+                currency: 'USD',
+                currentBalance: 0,
+                type: type,
+                status: 'Active'
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
