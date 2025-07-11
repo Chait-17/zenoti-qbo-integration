@@ -138,14 +138,14 @@ app.post('/api/sync', async (req, res) => {
     const connectionId = connectionsResponse.data.results[0]?.id;
     if (!connectionId) throw new Error('No connection found for company');
 
-    // Fetch valid account creation options with fallback
+    // Fetch valid account creation options
     let validCategories = [];
     try {
       const optionsResponse = await axios.get(
         `https://api.codat.io/companies/${companyId}/connections/${connectionId}/options/chartOfAccounts`,
         { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
       );
-      validCategories = optionsResponse.data.fullyQualifiedCategory?.options?.map(opt => opt.value) || [];
+      validCategories = optionsResponse.data.properties.fullyQualifiedCategory.options.map(opt => opt.value);
       console.log('Fetched valid categories:', validCategories);
     } catch (optionsError) {
       console.error('Failed to fetch account options:', {
@@ -153,14 +153,15 @@ app.post('/api/sync', async (req, res) => {
         status: optionsError.response?.status,
         data: optionsError.response?.data
       });
-      // Fallback to QuickBooks-compatible categories
-      validCategories = {
-        'Income': 'Revenue',
-        'Current Liability': 'Liabilities.Current',
-        'Current Asset': 'Assets.Current'
-      };
-      console.log('Using fallback categories:', Object.keys(validCategories));
+      throw new Error('Failed to fetch account creation options');
     }
+
+    // Map account types to specific categories
+    const categoryMap = {
+      'Income': 'Income.Income.ServiceFeeIncome',
+      'Current Liability': 'Liability.Other Current Liability.CurrentLiabilities',
+      'Current Asset': 'Asset.Other Current Asset.UndepositedFunds'
+    };
 
     // Fetch and process accounts
     let accountMap;
@@ -190,24 +191,29 @@ app.post('/api/sync', async (req, res) => {
         let account = existingAccounts.find(a => a.name === accountName && a.accountType === type);
         if (!account) {
           console.log(`Attempting to create account: ${accountName}, Type: ${type}, Company ID: ${companyId}`);
-          const category = typeof validCategories === 'object' ? validCategories[type] || `${type}` : validCategories.find(cat => cat.startsWith(type)) || `${type}`;
+          const category = categoryMap[type];
+          if (!category || !validCategories.includes(category)) {
+            throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
+          }
           console.log('Payload for account creation:', {
-            nominalCode: '611',
-            name: accountName,
-            description: `Account for ${accountName}`,
-            fullyQualifiedCategory: category,
-            fullyQualifiedName: accountName,
-            currency: 'USD',
-            currentBalance: 0,
-            type: type,
-            status: 'Active'
+            account: {
+              nominalCode: '611',
+              name: accountName,
+              description: `Account for ${accountName}`,
+              fullyQualifiedCategory: category,
+              fullyQualifiedName: accountName,
+              currency: 'USD',
+              currentBalance: 0,
+              type: type,
+              status: 'Active'
+            }
           });
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
                 account: {
-                  nominalCode: '611', // Example, adjust as needed
+                  nominalCode: '611',
                   name: accountName,
                   description: `Account for ${accountName}`,
                   fullyQualifiedCategory: category,
