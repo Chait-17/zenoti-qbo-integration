@@ -3,189 +3,134 @@
      <head>
        <meta charset="UTF-8">
        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-       <title>Zenoti-QuickBooks Integration</title>
-       <script src="https://cdn.tailwindcss.com"></script>
-       <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
-       <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
-       <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.7/babel.min.js"></script>
+       <title>Zenoti-QBO Integration</title>
      </head>
-     <body class="bg-gray-100">
-       <div id="root" class="container mx-auto p-4"></div>
-       <script type="text/babel">
-         const { useState } = React;
+     <body>
+       <div>
+         <h1>Zenoti-QBO Integration</h1>
+         <label for="apiKey">Zenoti API Key:</label>
+         <input type="text" id="apiKey" placeholder="Enter API Key"><br><br>
+         <label for="companyName">Company Name:</label>
+         <input type="text" id="companyName" placeholder="Enter Company Name"><br><br>
+         <button onclick="loadCenters()">Load Centers</button>
+         <select id="centerSelect" disabled></select><br><br>
+         <button onclick="generateAuthLink()" disabled>Generate QuickBooks Auth Link</button>
+         <div id="status"></div><br>
+         <label for="startDate">Start Date:</label>
+         <input type="date" id="startDate"><br><br>
+         <label for="endDate">End Date:</label>
+         <input type="date" id="endDate"><br><br>
+         <button onclick="syncData()" disabled>Sync Data</button>
+         <div id="syncStatus"></div>
+         <div id="syncDetails"></div>
+       </div>
 
-         class ErrorBoundary extends React.Component {
-           state = { error: null };
-           static getDerivedStateFromError(error) {
-             return { error: error.message };
+       <script>
+         let centers = [];
+         const apiKeyInput = document.getElementById('apiKey');
+         const companyNameInput = document.getElementById('companyName');
+         const centerSelect = document.getElementById('centerSelect');
+         const statusDiv = document.getElementById('status');
+         const startDateInput = document.getElementById('startDate');
+         const endDateInput = document.getElementById('endDate');
+         const syncStatusDiv = document.getElementById('syncStatus');
+         const syncDetailsDiv = document.getElementById('syncDetails');
+
+         apiKeyInput.addEventListener('input', enableButtons);
+         companyNameInput.addEventListener('input', enableButtons);
+         centerSelect.addEventListener('change', enableButtons);
+         startDateInput.addEventListener('change', enableButtons);
+         endDateInput.addEventListener('change', enableButtons);
+
+         function enableButtons() {
+           const authButton = document.querySelector('button:nth-of-type(2)');
+           const syncButton = document.querySelector('button:nth-of-type(3)');
+           authButton.disabled = !(apiKeyInput.value && companyNameInput.value && centerSelect.value);
+           syncButton.disabled = !(apiKeyInput.value && companyNameInput.value && centerSelect.value && startDateInput.value && endDateInput.value);
+         }
+
+         async function loadCenters() {
+           const apiKey = apiKeyInput.value;
+           const companyName = companyNameInput.value;
+           if (!apiKey || !companyName) {
+             statusDiv.textContent = 'Please enter API Key and Company Name';
+             return;
            }
-           render() {
-             if (this.state.error) {
-               return <div className="text-red-500 p-4">Error: {this.state.error}</div>;
-             }
-             return this.props.children;
+
+           try {
+             const response = await fetch('/api/centers', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ apiKey, companyName })
+             });
+             const data = await response.json();
+             if (data.error) throw new Error(data.error);
+             centers = data.centers;
+             centerSelect.innerHTML = '<option value="">Select a center</option>';
+             centers.forEach(center => {
+               const option = document.createElement('option');
+               option.value = center.id;
+               option.textContent = center.name || center.id;
+               centerSelect.appendChild(option);
+             });
+             centerSelect.disabled = false;
+             statusDiv.textContent = 'Centers loaded successfully';
+           } catch (error) {
+             statusDiv.textContent = `Failed to load centers: ${error.message}`;
            }
          }
 
-         const App = () => {
-           const [apiKey, setApiKey] = useState('');
-           const [companyName, setCompanyName] = useState('');
-           const [centers, setCenters] = useState([]);
-           const [selectedCenter, setSelectedCenter] = useState('');
-           const [authUrl, setAuthUrl] = useState('');
-           const [status, setStatus] = useState('');
-           const [isSyncing, setIsSyncing] = useState(false);
+         async function generateAuthLink() {
+           const apiKey = apiKeyInput.value;
+           const companyName = companyNameInput.value;
+           const centerId = centerSelect.value;
+           if (!apiKey || !companyName || !centerId) {
+             statusDiv.textContent = 'Please fill all fields';
+             return;
+           }
 
-           const fetchCenters = async () => {
-             try {
-               const response = await fetch('/api/centers', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ apiKey, companyName }),
-               });
-               const data = await response.json();
-               console.log('fetchCenters response:', data); // Debug log
-               if (response.ok && data.centers && Array.isArray(data.centers)) {
-                 setCenters(data.centers);
-                 setStatus('Centers loaded successfully.');
-               } else {
-                 setStatus(`Failed to load centers: ${data.error || 'Invalid response'}`);
-               }
-             } catch (error) {
-               setStatus('Error fetching centers: ' + error.message);
-             }
-           };
+           try {
+             const response = await fetch('/api/auth-link', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ apiKey, companyName, centerId })
+             });
+             const data = await response.json();
+             if (data.error) throw new Error(data.error);
+             statusDiv.innerHTML = `Authorization link generated. <a href="${data.authUrl}" target="_blank">Click to connect QuickBooks</a>`;
+           } catch (error) {
+             statusDiv.textContent = `Failed to generate auth link: ${error.message}`;
+           }
+         }
 
-           const generateAuthLink = async () => {
-             try {
-               const response = await fetch('/api/auth-link', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ apiKey, companyName, centerId: selectedCenter }),
-               });
-               const data = await response.json();
-               if (response.ok && data.authUrl) {
-                 setAuthUrl(data.authUrl);
-                 setStatus('Authorization link generated. Click to connect QuickBooks.');
-               } else {
-                 setStatus(`Failed to generate auth link: ${data.error || 'Invalid response'}`);
-               }
-             } catch (error) {
-               setStatus('Error generating auth link: ' + error.message);
-             }
-           };
+         async function syncData() {
+           const apiKey = apiKeyInput.value;
+           const companyName = companyNameInput.value;
+           const centerId = centerSelect.value;
+           const startDate = startDateInput.value;
+           const endDate = endDateInput.value;
+           if (!apiKey || !companyName || !centerId || !startDate || !endDate) {
+             syncStatusDiv.textContent = 'Please fill all fields';
+             return;
+           }
 
-           const triggerSync = async () => {
-             setIsSyncing(true);
-             try {
-               const response = await fetch('/api/sync', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ apiKey, companyName, centerId: selectedCenter }),
-               });
-               const data = await response.json();
-               if (response.ok) {
-                 setStatus(data.message || 'Sync completed.');
-               } else {
-                 setStatus(`Sync failed: ${data.error || 'Invalid response'}`);
-               }
-             } catch (error) {
-               setStatus('Error during sync: ' + error.message);
-             } finally {
-               setIsSyncing(false);
-             }
-           };
-
-           return (
-             <ErrorBoundary>
-               <div className="max-w-2xl mx-auto bg-white p-6 rounded shadow">
-                 <h1 className="text-2xl font-bold mb-4">Zenoti-QuickBooks Integration</h1>
-                 <div className="mb-4">
-                   <label className="block text-sm font-medium">Company Name</label>
-                   <input
-                     type="text"
-                     value={companyName}
-                     onChange={(e) => setCompanyName(e.target.value)}
-                     className="mt-1 p-2 border rounded w-full"
-                     placeholder="Enter Company Name"
-                   />
-                 </div>
-                 <div className="mb-4">
-                   <label className="block text-sm font-medium">Zenoti API Key</label>
-                   <input
-                     type="text"
-                     value={apiKey}
-                     onChange={(e) => setApiKey(e.target.value)}
-                     className="mt-1 p-2 border rounded w-full"
-                     placeholder="Enter Zenoti API Key"
-                   />
-                 </div>
-                 <button
-                   onClick={fetchCenters}
-                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mb-4"
-                 >
-                   Load Centers
-                 </button>
-                 {centers.length > 0 && (
-                   <div className="mb-4">
-                     <label className="block text-sm font-medium">Select Center</label>
-                     <select
-                       value={selectedCenter}
-                       onChange={(e) => setSelectedCenter(e.target.value)}
-                       className="mt-1 p-2 border rounded w-full"
-                     >
-                       <option value="">Select a Center</option>
-                       {centers.map((center) => (
-                         <option key={center.id} value={center.id}>
-                           {center.name}
-                         </option>
-                       ))}
-                     </select>
-                   </div>
-                 )}
-                 {selectedCenter && (
-                   <button
-                     onClick={generateAuthLink}
-                     className="bg-green-500 text-white p-2 rounded hover:bg-green-600 mb-4"
-                   >
-                     Generate QuickBooks Auth Link
-                   </button>
-                 )}
-                 {authUrl && (
-                   <div className="mb-4">
-                     <a
-                       href={authUrl}
-                       target="_blank"
-                       rel="noopener noreferrer"
-                       className="text-blue-500 underline"
-                     >
-                       Connect to QuickBooks
-                     </a>
-                   </div>
-                 )}
-                 {selectedCenter && (
-                   <button
-                     onClick={triggerSync}
-                     disabled={isSyncing}
-                     className={`bg-purple-500 text-white p-2 rounded hover:bg-purple-600 ${
-                       isSyncing ? 'opacity-50 cursor-not-allowed' : ''
-                     }`}
-                   >
-                     {isSyncing ? 'Syncing...' : 'Sync Data'}
-                   </button>
-                 )}
-                 {status && (
-                   <div className="mt-4 p-2 bg-gray-100 rounded">
-                     <p>{status}</p>
-                   </div>
-                 )}
-               </div>
-             </ErrorBoundary>
-           );
-         };
-
-         ReactDOM.render(<App />, document.getElementById('root'));
+           try {
+             const response = await fetch('/api/sync', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ apiKey, companyName, centerId, startDate, endDate })
+             });
+             const data = await response.json();
+             if (data.error) throw new Error(data.error);
+             syncStatusDiv.textContent = 'Sync complete';
+             syncDetailsDiv.innerHTML = '<h3>Synced Data Details:</h3>';
+             data.syncedDetails.forEach(detail => {
+               syncDetailsDiv.innerHTML += `<p>Date: ${detail.date}, Total Amount: $${detail.totalAmount.toFixed(2)}, Journal Entry ID: ${detail.journalEntryId}</p>`;
+             });
+           } catch (error) {
+             syncStatusDiv.textContent = `Sync failed: ${error.message}`;
+           }
+         }
        </script>
      </body>
      </html>
-     
