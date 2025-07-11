@@ -214,6 +214,7 @@ app.post('/api/sync', async (req, res) => {
             type: type,
             status: 'Active'
           });
+          let pushOperationKey;
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
@@ -229,8 +230,31 @@ app.post('/api/sync', async (req, res) => {
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
-            account = createResponse.data?.data || createResponse.data; // Handle varying response structures
-            console.log(`Created account: ${accountName}, ID: ${account.id}, Full response: ${JSON.stringify(createResponse.data)}`);
+            pushOperationKey = createResponse.data.pushOperationKey;
+            console.log(`Push initiated for ${accountName}, pushOperationKey: ${pushOperationKey}, Full response: ${JSON.stringify(createResponse.data)}`);
+
+            // Poll until the operation completes
+            let operationStatus = 'Pending';
+            let attempt = 0;
+            const maxAttempts = 10;
+            const delayMs = 2000; // 2 seconds
+            while (operationStatus === 'Pending' && attempt < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              const operationResponse = await axios.get(
+                `https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}`,
+                { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
+              );
+              operationStatus = operationResponse.data.status;
+              console.log(`Polling ${accountName}, status: ${operationStatus}, attempt: ${attempt + 1}`);
+              if (operationStatus === 'Success') {
+                account = operationResponse.data.results?.data || existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
+                console.log(`Account created: ${accountName}, ID: ${account.id}, Final response: ${JSON.stringify(operationResponse.data)}`);
+              }
+              attempt++;
+            }
+            if (operationStatus !== 'Success') {
+              throw new Error(`Push operation for ${accountName} did not complete, final status: ${operationStatus}`);
+            }
           } catch (createError) {
             console.error(`Failed to create account ${accountName}:`, {
               status: createError.response?.status,
@@ -266,6 +290,7 @@ app.post('/api/sync', async (req, res) => {
         chunkEnd.setDate(chunkEnd.getDate() + 6);
         if (chunkEnd > end) chunkEnd.setDate(end.getDate());
 
+        console.log(`Fetching sales for centerId: ${centerId}, start: ${currentStart.toISOString().split('T')[0]}, end: ${chunkEnd.toISOString().split('T')[0]}`);
         const salesResponse = await axios.get(`https://api.zenoti.com/v1/sales/salesreport`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
           params: { centerId: centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
