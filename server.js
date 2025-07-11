@@ -94,11 +94,12 @@ app.post('/api/sync', async (req, res) => {
       return res.status(500).json({ error: 'Codat API key not configured' });
     }
 
-    // Find company by name with link-based pagination
+    // Find company by name with robust link-based pagination
     let allCompanies = [];
     let nextUrl = 'https://api.codat.io/companies?page=1&pageSize=100';
 
     while (nextUrl) {
+      console.log('Fetching URL:', nextUrl); // Log the exact URL being fetched
       try {
         const companiesResponse = await axios.get(nextUrl, {
           headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' }
@@ -107,9 +108,12 @@ app.post('/api/sync', async (req, res) => {
         allCompanies = allCompanies.concat(pageData);
         console.log(`Fetched page, companies count: ${pageData.length}, total so far: ${allCompanies.length}`);
         console.log(`Page companies: ${pageData.map(c => c.name).join(', ')}`);
-        nextUrl = companiesResponse.data._links?.next?.href || null; // Update to next page or stop
+        nextUrl = companiesResponse.data._links?.next?.href;
+        if (nextUrl && !nextUrl.startsWith('http')) {
+          nextUrl = `https://api.codat.io${nextUrl}`; // Convert relative URL to absolute
+        }
       } catch (error) {
-        console.error('Error fetching companies page:', error.response?.data || error.message);
+        console.error('Error fetching companies page, URL:', nextUrl, error.response?.data || error.message);
         if (error.response?.status === 429) { // Rate limit
           console.log('Rate limit hit, waiting before retry...');
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -117,8 +121,9 @@ app.post('/api/sync', async (req, res) => {
         }
         throw error;
       }
+      if (allCompanies.length >= 1811) break; // Safety check based on totalResults
     }
-    console.log('All companies fetched:', allCompanies.length, `Expected: ${1811}`);
+    console.log('All companies fetched:', allCompanies.length, `Expected: 1811`);
     const company = allCompanies.find(c => c.name.toLowerCase() === companyName.toLowerCase());
     if (!company) throw new Error(`Company '${companyName}' not found in Codat. Available: ${allCompanies.map(c => c.name).join(', ')}`);
     const companyId = company.id;
