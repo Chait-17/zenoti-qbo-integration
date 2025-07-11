@@ -94,12 +94,23 @@ app.post('/api/sync', async (req, res) => {
       return res.status(500).json({ error: 'Codat API key not configured' });
     }
 
-    // Find company by name
-    const companiesResponse = await axios.get('https://api.codat.io/companies', {
-      headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' }
-    });
-    const company = companiesResponse.data.results.find(c => c.name === companyName);
-    if (!company) throw new Error('Company not found');
+    // Find company by name with full pagination
+    let allCompanies = [];
+    let page = 1;
+    let hasMore = true;
+    while (hasMore) {
+      const companiesResponse = await axios.get('https://api.codat.io/companies', {
+        headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' },
+        params: { page, pageSize: 100 }
+      });
+      const pageData = companiesResponse.data.results || [];
+      allCompanies = allCompanies.concat(pageData);
+      hasMore = companiesResponse.data.page < companiesResponse.data.pageCount;
+      page++;
+    }
+    console.log('All companies fetched:', allCompanies.length);
+    const company = allCompanies.find(c => c.name.toLowerCase() === companyName.toLowerCase());
+    if (!company) throw new Error(`Company '${companyName}' not found in Codat. Available: ${allCompanies.map(c => c.name).join(', ')}`);
     const companyId = company.id;
 
     // Define required accounts
@@ -241,7 +252,11 @@ app.post('/api/sync', async (req, res) => {
     res.json({ syncedDetails });
   } catch (error) {
     const errorMessage = error.response?.data?.error || error.message;
-    console.error('Sync error:', error.response?.data || error.message);
+    console.error('Sync error details:', {
+      message: errorMessage,
+      response: error.response?.data,
+      stack: error.stack
+    });
     res.status(500).json({ error: `Sync failed: ${errorMessage}` });
   }
 });
