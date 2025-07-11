@@ -194,7 +194,6 @@ app.post('/api/sync', async (req, res) => {
         }
       };
       accountMap = {};
-      let accountIndex = 0;
       for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections })) {
         let account = existingAccounts.find(a => a.name === accountName && a.accountType === type);
         if (!account) {
@@ -203,9 +202,7 @@ app.post('/api/sync', async (req, res) => {
           if (!category || !validCategories.includes(category)) {
             throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
           }
-          const nominalCode = (6110 + accountIndex).toString().padStart(4, '0'); // Generate unique four-digit code
           console.log('Payload for account creation:', {
-            nominalCode: nominalCode,
             name: accountName,
             description: `Account for ${accountName}`,
             fullyQualifiedCategory: category,
@@ -219,7 +216,6 @@ app.post('/api/sync', async (req, res) => {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
-                nominalCode: nominalCode,
                 name: accountName,
                 description: `Account for ${accountName}`,
                 fullyQualifiedCategory: category,
@@ -241,7 +237,6 @@ app.post('/api/sync', async (req, res) => {
             account = existingAccounts.find(a => a.name === accountName) || { id: null };
             console.log(`Falling back to existing or skipping account: ${accountName}`);
           }
-          accountIndex++;
         }
         accountMap[accountName] = account.id || accountMap[accountName] || null;
       }
