@@ -197,7 +197,7 @@ app.post('/api/sync', async (req, res) => {
       accountMap = {};
       for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections })) {
         const normalizedName = accountName.toLowerCase().trim();
-        let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName && a.accountType === type);
+        let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
         if (!account) {
           console.log(`Attempting to create account: ${accountName}, Type: ${type}, Company ID: ${companyId}`);
           const category = categoryMap[type];
@@ -205,27 +205,31 @@ app.post('/api/sync', async (req, res) => {
             throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
           }
           console.log('Payload for account creation:', {
-            name: accountName,
-            description: `Account for ${accountName}`,
-            fullyQualifiedCategory: category,
-            fullyQualifiedName: accountName,
-            currency: 'USD',
-            currentBalance: 0,
-            type: type,
-            status: 'Active'
+            account: {
+              name: accountName,
+              description: `Account for ${accountName}`,
+              fullyQualifiedCategory: category,
+              fullyQualifiedName: accountName,
+              currency: 'USD',
+              currentBalance: 0,
+              type: type,
+              status: 'Active'
+            }
           });
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
-                name: accountName,
-                description: `Account for ${accountName}`,
-                fullyQualifiedCategory: category,
-                fullyQualifiedName: accountName,
-                currency: 'USD',
-                currentBalance: 0,
-                type: type,
-                status: 'Active'
+                account: {
+                  name: accountName,
+                  description: `Account for ${accountName}`,
+                  fullyQualifiedCategory: category,
+                  fullyQualifiedName: accountName,
+                  currency: 'USD',
+                  currentBalance: 0,
+                  type: type,
+                  status: 'Active'
+                }
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
@@ -267,11 +271,11 @@ app.post('/api/sync', async (req, res) => {
 
         const salesResponse = await axios.get(`https://api.zenoti.com/v1/sales/salesreport`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: { centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
+          params: { centerId: centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
         });
         const collectionResponse = await axios.get(`https://api.zenoti.com/v1/collections_report`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: { centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
+          params: { centerId: centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
         });
 
         const salesData = salesResponse.data.center_sales_report || [];
