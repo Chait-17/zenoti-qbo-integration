@@ -37,7 +37,7 @@ app.post('/api/auth-link', async (req, res) => {
 
   try {
     const codatApiKey = process.env.CODAT_API_KEY;
-    console.log('CODAT_API_KEY:', codatApiKey);
+    console.log('CODAT_API_KEY (raw):', codatApiKey);
     if (!codatApiKey) {
       return res.status(500).json({ error: 'Codat API key not configured' });
     }
@@ -98,6 +98,7 @@ app.post('/api/sync', async (req, res) => {
 
   try {
     const codatApiKey = process.env.CODAT_API_KEY;
+    console.log('CODAT_API_KEY (raw):', codatApiKey);
     if (!codatApiKey) {
       return res.status(500).json({ error: 'Codat API key not configured' });
     }
@@ -343,6 +344,7 @@ app.post('/api/sync', async (req, res) => {
           let totalAmount = 0;
           const journalLines = [];
 
+          // Process sales (credit entries)
           sales.forEach(tx => {
             let account;
             switch (tx.item.type) {
@@ -355,9 +357,22 @@ app.post('/api/sync', async (req, res) => {
             }
             const amount = tx.final_sale_price || 0;
             totalAmount += amount;
-            journalLines.push({ accountRef: { id: accountMap[account] }, description: tx.item.name || 'Sale', amount: amount, isCredit: true });
+            journalLines.push({
+              description: tx.item.name || 'Sale',
+              netAmount: amount, // Positive for credit
+              currency: 'USD',
+              accountRef: { id: accountMap[account], name: '' }
+            });
+            // Add corresponding debit entry (e.g., to a cash or receivable account)
+            journalLines.push({
+              description: tx.item.name || 'Sale Debit',
+              netAmount: -amount, // Negative for debit
+              currency: 'USD',
+              accountRef: { id: accountMap['Zenoti undeposited cash funds'] || accountMap['Zenoti undeposited card payment'], name: '' }
+            });
           });
 
+          // Process collections (debit entries)
           collections.forEach(tx => {
             let account;
             switch (tx.items[0].type) {
@@ -371,30 +386,56 @@ app.post('/api/sync', async (req, res) => {
             }
             const amount = tx.total_collection || 0;
             totalAmount += amount;
-            journalLines.push({ accountRef: { id: accountMap[account] }, description: tx.items[0].name || 'Collection/Redemption', amount: amount, isCredit: false });
+            journalLines.push({
+              description: tx.items[0].name || 'Collection/Redemption',
+              netAmount: amount, // Positive for debit
+              currency: 'USD',
+              accountRef: { id: accountMap[account], name: '' }
+            });
+            // Add corresponding credit entry (e.g., to a revenue or liability account)
+            journalLines.push({
+              description: tx.items[0].name || 'Collection/Redemption Credit',
+              netAmount: -amount, // Negative for credit
+              currency: 'USD',
+              accountRef: { id: accountMap['membership revenue account'] || accountMap['Zenoti package liability account'], name: '' }
+            });
           });
 
           if (journalLines.length > 0) {
+            console.log(`Posting journal for date: ${date}, companyId: ${companyId}, connectionId: ${connectionId}, request payload:`, {
+              postedOn: `${date}T00:00:00`,
+              journalLines,
+              modifiedDate: '0001-01-01T00:00:00'
+            });
             console.log(`Posting journal for date: ${date}, companyId: ${companyId}, connectionId: ${connectionId}, request config:`, {
               url: `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`,
               method: 'POST',
               headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' },
-              data: { journal: { journalLines, postedDate: date } }
+              data: {
+                postedOn: `${date}T00:00:00`,
+                journalLines,
+                modifiedDate: '0001-01-01T00:00:00'
+              }
             });
             const journalResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`,
               {
-                journal: {
-                  journalLines,
-                  postedDate: date
-                }
+                postedOn: `${date}T00:00:00`,
+                journalLines,
+                modifiedDate: '0001-01-01T00:00:00'
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
             console.log(`Journal response headers:`, journalResponse.headers);
             console.log(`Journal response data:`, journalResponse.data);
-            const journalEntryId = journalResponse.data.data.id;
-            syncedDetails.push({ date, totalAmount, journalEntryId });
+            // Check if the push was successful before accessing data.id
+            if (journalResponse.data.status === 'Success') {
+              const journalEntryId = journalResponse.data.data?.id || journalResponse.data.pushOperationKey;
+              syncedDetails.push({ date, totalAmount, journalEntryId });
+            } else {
+              console.error('Journal push failed:', journalResponse.data.errorMessage);
+              throw new Error(`Journal push failed: ${journalResponse.data.errorMessage}`);
+            }
           }
         }
 
