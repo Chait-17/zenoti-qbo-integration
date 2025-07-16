@@ -94,6 +94,7 @@ app.post('/api/sync', async (req, res) => {
     return res.status(400).json({ error: `Invalid centerId: ${centerId}. Must be a valid UUID.` });
   }
   console.log('Using centerId for Zenoti API:', centerId);
+  console.log('Using apiKey for Zenoti API:', apiKey ? 'Provided' : 'Not provided');
 
   try {
     const codatApiKey = process.env.CODAT_API_KEY;
@@ -295,7 +296,7 @@ app.post('/api/sync', async (req, res) => {
         if (chunkEnd > end) chunkEnd.setDate(end.getDate());
 
         const currentCenterId = centerId; // Explicitly capture centerId for this scope
-        const salesParams = { center_id: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] };
+        const salesParams = { center_id: currentCenterId, start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] };
         console.log(`Fetching sales for centerId: ${currentCenterId}, request config:`, {
           url: `https://api.zenoti.com/v1/sales/salesreport`,
           params: salesParams,
@@ -383,23 +384,23 @@ app.post('/api/sync', async (req, res) => {
         currentStart.setDate(chunkEnd.getDate() + 1);
       }
     } catch (syncError) {
-      console.error('Sync error:', {
+      console.error('Sync error details:', {
         message: syncError.message,
         status: syncError.response?.status,
-        data: syncError.response?.data
+        data: syncError.response?.data,
+        stack: syncError.stack
       });
       throw new Error(`Failed to sync data: ${syncError.message}`);
     }
 
     res.json({ syncedDetails });
   } catch (error) {
-    const errorMessage = error.message;
-    console.error('Sync error details:', {
-      message: errorMessage,
+    console.error('Outer sync error:', {
+      message: error.message,
       response: error.response?.data,
       stack: error.stack
     });
-    res.status(500).json({ error: `Sync failed: ${errorMessage}` });
+    res.status(500).json({ error: `Sync failed: ${error.message}` });
   }
 });
 
