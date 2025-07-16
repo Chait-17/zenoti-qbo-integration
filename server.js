@@ -77,7 +77,7 @@ app.post('/api/auth-link', async (req, res) => {
     res.json({ authUrl });
   } catch (error) {
     const errorMessage = error.response?.data?.error || error.message;
-    console.error('Codat API error:', error.response?.data || error.message);
+    console.error('Codat API error:', error.response?.data || error.method);
     res.status(500).json({ error: `Failed to generate auth link: ${errorMessage}` });
   }
 });
@@ -94,7 +94,7 @@ app.post('/api/sync', async (req, res) => {
     return res.status(400).json({ error: `Invalid centerId: ${centerId}. Must be a valid UUID.` });
   }
   console.log('Using centerId for Zenoti API:', centerId);
-  console.log('Using apiKey for Zenoti API:', apiKey ? 'Provided' : 'Not provided');
+  console.log('Using apiKey for Zenoti API:', apiKey ? `Provided (masked: ${apiKey.slice(0, 5)}...)` : 'Not provided');
 
   try {
     const codatApiKey = process.env.CODAT_API_KEY;
@@ -297,8 +297,10 @@ app.post('/api/sync', async (req, res) => {
 
         const currentCenterId = centerId; // Explicitly capture centerId for this scope
         const salesParams = { center_id: currentCenterId, start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] };
+        console.log('Using apiKey for sales request:', apiKey ? `Provided (masked: ${apiKey.slice(0, 5)}...)` : 'Not provided');
         console.log(`Fetching sales for centerId: ${currentCenterId}, request config:`, {
           url: `https://api.zenoti.com/v1/sales/salesreport`,
+          method: 'GET',
           params: salesParams,
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' }
         });
@@ -306,6 +308,8 @@ app.post('/api/sync', async (req, res) => {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
           params: salesParams
         });
+        console.log(`Sales response headers:`, salesResponse.headers);
+        console.log(`Sales response data:`, salesResponse.data);
         const collectionsUrl = `https://api.zenoti.com/v1/Centers/${currentCenterId}/collections_report?start_date=${currentStart.toISOString().split('T')[0]}&end_date=${chunkEnd.toISOString().split('T')[0]}`;
         console.log(`Fetching collections for centerId: ${currentCenterId}, request config:`, {
           url: collectionsUrl,
@@ -388,6 +392,7 @@ app.post('/api/sync', async (req, res) => {
         message: syncError.message,
         status: syncError.response?.status,
         data: syncError.response?.data,
+        headers: syncError.response?.headers,
         stack: syncError.stack
       });
       throw new Error(`Failed to sync data: ${syncError.message}`);
@@ -398,6 +403,7 @@ app.post('/api/sync', async (req, res) => {
     console.error('Outer sync error:', {
       message: error.message,
       response: error.response?.data,
+      headers: error.response?.headers,
       stack: error.stack
     });
     res.status(500).json({ error: `Sync failed: ${error.message}` });
