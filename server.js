@@ -2,8 +2,12 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
+// START: Middleware
 app.use(express.json());
 
+// END: Middleware
+
+// START: /api/centers Endpoint
 app.post('/api/centers', async (req, res) => {
   const { apiKey, companyName } = req.body;
   if (!apiKey || !companyName) {
@@ -28,7 +32,9 @@ app.post('/api/centers', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch centers from Zenoti: ' + (error.response?.data?.error || error.message) });
   }
 });
+// END: /api/centers Endpoint
 
+// START: /api/auth-link Endpoint
 app.post('/api/auth-link', async (req, res) => {
   const { apiKey, companyName, centerId } = req.body;
   if (!apiKey || !companyName || !centerId) {
@@ -81,7 +87,9 @@ app.post('/api/auth-link', async (req, res) => {
     res.status(500).json({ error: `Failed to generate auth link: ${errorMessage}` });
   }
 });
+// END: /api/auth-link Endpoint
 
+// START: /api/sync Endpoint
 app.post('/api/sync', async (req, res) => {
   const { apiKey, companyName, centerId, startDate, endDate } = req.body;
   if (!apiKey || !companyName || !centerId || !startDate || !endDate) {
@@ -486,5 +494,9 @@ app.post('/api/sync', async (req, res) => {
     res.status(500).json({ error: `Sync failed: ${error.message}` });
   }
 });
+// END: /api/sync Endpoint
 
 module.exports = app;
+
+// DEPLOYMENT CHECK: This line should be present if the file deployed correctly
+console.log('Server.js deployed successfully');
