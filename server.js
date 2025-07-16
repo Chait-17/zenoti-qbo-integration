@@ -295,16 +295,23 @@ app.post('/api/sync', async (req, res) => {
         if (chunkEnd > end) chunkEnd.setDate(end.getDate());
 
         const currentCenterId = centerId; // Explicitly capture centerId for this scope
-        const params = { centerId: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] };
-        console.log(`Fetching sales for centerId: ${currentCenterId}, params: ${JSON.stringify(params)}`);
+        const salesParams = { center_id: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] };
+        console.log(`Fetching sales for centerId: ${currentCenterId}, request config:`, {
+          url: `https://api.zenoti.com/v1/sales/salesreport`,
+          params: salesParams,
+          headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' }
+        });
         const salesResponse = await axios.get(`https://api.zenoti.com/v1/sales/salesreport`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: params
+          params: salesParams
         });
-        console.log(`Fetching collections for centerId: ${currentCenterId}, params: ${JSON.stringify(params)}`);
-        const collectionResponse = await axios.get(`https://api.zenoti.com/v1/collections_report`, {
-          headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: params
+        const collectionsUrl = `https://api.zenoti.com/v1/Centers/${currentCenterId}/collections_report?start_date=${currentStart.toISOString().split('T')[0]}&end_date=${chunkEnd.toISOString().split('T')[0]}`;
+        console.log(`Fetching collections for centerId: ${currentCenterId}, request config:`, {
+          url: collectionsUrl,
+          headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' }
+        });
+        const collectionResponse = await axios.get(collectionsUrl, {
+          headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' }
         });
 
         const salesData = salesResponse.data.center_sales_report || [];
