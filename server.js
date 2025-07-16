@@ -249,11 +249,15 @@ app.post('/api/sync', async (req, res) => {
               if (operationStatus === 'Success') {
                 account = operationResponse.data.results?.data || existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
                 console.log(`Account created: ${accountName}, ID: ${account.id}, Final response: ${JSON.stringify(operationResponse.data)}`);
+              } else if (operationStatus === 'Failed' && operationResponse.data.errorMessage?.includes('The name supplied already exists')) {
+                console.log(`Duplicate account detected: ${accountName}, skipping creation`);
+                account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName) || { id: null };
+                break;
               }
               attempt++;
             }
-            if (operationStatus !== 'Success') {
-              throw new Error(`Push operation for ${accountName} did not complete, final status: ${operationStatus}`);
+            if (operationStatus !== 'Success' && !operationResponse.data.errorMessage?.includes('The name supplied already exists')) {
+              throw new Error(`Push operation for ${accountName} failed, final status: ${operationStatus}, error: ${operationResponse.data.errorMessage}`);
             }
           } catch (createError) {
             console.error(`Failed to create account ${accountName}:`, {
