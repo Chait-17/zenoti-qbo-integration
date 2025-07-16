@@ -180,7 +180,7 @@ app.post('/api/sync', async (req, res) => {
         { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
       );
       const existingAccounts = accountsResponse.data.results || [];
-      console.log('Existing accounts:', existingAccounts.map(a => ({ name: a.name, type: a.accountType })));
+      console.log('Existing accounts:', existingAccounts.map(a => ({ name: a.name, type: a.accountType, id: a.id })));
       const requiredAccounts = {
         sales: {
           'Zenoti service sales': { type: 'Income' },
@@ -357,6 +357,10 @@ app.post('/api/sync', async (req, res) => {
             }
             const amount = tx.final_sale_price || 0;
             totalAmount += amount;
+            if (!accountMap[account]) {
+              console.error(`Missing account ID for ${account} in accountMap`);
+              continue;
+            }
             journalLines.push({
               description: tx.item.name || 'Sale',
               netAmount: amount, // Positive for credit
@@ -364,11 +368,16 @@ app.post('/api/sync', async (req, res) => {
               accountRef: { id: accountMap[account], name: '' }
             });
             // Add corresponding debit entry (e.g., to a cash or receivable account)
+            const debitAccount = accountMap['Zenoti undeposited cash funds'] || accountMap['Zenoti undeposited card payment'];
+            if (!debitAccount) {
+              console.error(`Missing debit account ID for Zenoti undeposited cash funds or Zenoti undeposited card payment`);
+              continue;
+            }
             journalLines.push({
               description: tx.item.name || 'Sale Debit',
               netAmount: -amount, // Negative for debit
               currency: 'USD',
-              accountRef: { id: accountMap['Zenoti undeposited cash funds'] || accountMap['Zenoti undeposited card payment'], name: '' }
+              accountRef: { id: debitAccount, name: '' }
             });
           });
 
@@ -386,6 +395,10 @@ app.post('/api/sync', async (req, res) => {
             }
             const amount = tx.total_collection || 0;
             totalAmount += amount;
+            if (!accountMap[account]) {
+              console.error(`Missing account ID for ${account} in accountMap`);
+              continue;
+            }
             journalLines.push({
               description: tx.items[0].name || 'Collection/Redemption',
               netAmount: amount, // Positive for debit
@@ -393,11 +406,16 @@ app.post('/api/sync', async (req, res) => {
               accountRef: { id: accountMap[account], name: '' }
             });
             // Add corresponding credit entry (e.g., to a revenue or liability account)
+            const creditAccount = accountMap['membership revenue account'] || accountMap['Zenoti package liability account'];
+            if (!creditAccount) {
+              console.error(`Missing credit account ID for membership revenue account or Zenoti package liability account`);
+              continue;
+            }
             journalLines.push({
               description: tx.items[0].name || 'Collection/Redemption Credit',
               netAmount: -amount, // Negative for credit
               currency: 'USD',
-              accountRef: { id: accountMap['membership revenue account'] || accountMap['Zenoti package liability account'], name: '' }
+              accountRef: { id: creditAccount, name: '' }
             });
           });
 
