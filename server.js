@@ -77,7 +77,7 @@ app.post('/api/auth-link', async (req, res) => {
     res.json({ authUrl });
   } catch (error) {
     const errorMessage = error.response?.data?.error || error.message;
-    console.error('Codat API error:', error.response?.data || error.method);
+    console.error('Codat API error:', error.response?.data || error.message);
     res.status(500).json({ error: `Failed to generate auth link: ${errorMessage}` });
   }
 });
@@ -310,17 +310,22 @@ app.post('/api/sync', async (req, res) => {
         });
         console.log(`Sales response headers:`, salesResponse.headers);
         console.log(`Sales response data:`, salesResponse.data);
-        const collectionsUrl = `https://api.zenoti.com/v1/Centers/${currentCenterId}/collections_report?start_date=${currentStart.toISOString().split('T')[0]}&end_date=${chunkEnd.toISOString().split('T')[0]}`;
+        const collectionsParams = { start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] };
         console.log(`Fetching collections for centerId: ${currentCenterId}, request config:`, {
-          url: collectionsUrl,
+          url: `https://api.zenoti.com/v1/Centers/${currentCenterId}/collections_report`,
+          method: 'GET',
+          params: collectionsParams,
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' }
         });
-        const collectionResponse = await axios.get(collectionsUrl, {
-          headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' }
+        const collectionResponse = await axios.get(`https://api.zenoti.com/v1/Centers/${currentCenterId}/collections_report`, {
+          headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
+          params: collectionsParams
         });
+        console.log(`Collections response headers:`, collectionResponse.headers);
+        console.log(`Collections response data:`, collectionResponse.data);
 
         const salesData = salesResponse.data.center_sales_report || [];
-        const collectionData = collectionResponse.data.collections || [];
+        const collectionData = collectionResponse.data.collections_report || [];
 
         const transactionsByDate = {};
         salesData.forEach(tx => {
@@ -329,7 +334,7 @@ app.post('/api/sync', async (req, res) => {
           transactionsByDate[date].sales.push(tx);
         });
         collectionData.forEach(tx => {
-          const date = new Date(tx.date).toISOString().split('T')[0];
+          const date = new Date(tx.created_date).toISOString().split('T')[0];
           if (!transactionsByDate[date]) transactionsByDate[date] = { sales: [], collections: [] };
           transactionsByDate[date].collections.push(tx);
         });
@@ -355,18 +360,18 @@ app.post('/api/sync', async (req, res) => {
 
           collections.forEach(tx => {
             let account;
-            switch (tx.paymentMethod) {
+            switch (tx.items[0].type) {
               case 'cash': account = 'Zenoti undeposited cash funds'; break;
-              case 'card': account = 'Zenoti undeposited card payment'; break;
-              case 'package': account = 'Zenoti package liability'; break;
-              case 'membership': account = 'Membership redemptions'; break;
-              case 'gift card': account = 'Zenoti gift card liability account'; break;
-              case 'prepaid card': account = 'Zenoti prepaid card liability account'; break;
+              case 'CC': account = 'Zenoti undeposited card payment'; break;
+              case 'Package': account = 'Zenoti package liability'; break;
+              case 'Membership': account = 'Membership redemptions'; break;
+              case 'GiftCard': account = 'Zenoti gift card liability account'; break;
+              case 'PrepaidCard': account = 'Zenoti prepaid card liability account'; break;
               default: account = 'Zenoti undeposited cash funds';
             }
-            const amount = tx.amount || 0;
+            const amount = tx.total_collection || 0;
             totalAmount += amount;
-            journalLines.push({ accountRef: { id: accountMap[account] }, description: tx.description || 'Collection/Redemption', amount: amount, isCredit: false });
+            journalLines.push({ accountRef: { id: accountMap[account] }, description: tx.items[0].name || 'Collection/Redemption', amount: amount, isCredit: false });
           });
 
           if (journalLines.length > 0) {
