@@ -379,14 +379,14 @@ app.post('/api/sync', async (req, res) => {
               url: `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`,
               method: 'POST',
               headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' },
-              data: { journal: { journalLines, date } }
+              data: { journal: { journalLines, postedDate: date } }
             });
             const journalResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`,
               {
                 journal: {
                   journalLines,
-                  date: date
+                  postedDate: date
                 }
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
