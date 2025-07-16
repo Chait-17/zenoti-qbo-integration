@@ -131,8 +131,7 @@ app.post('/api/sync', async (req, res) => {
           name: accountName, description: `Account for ${accountName}`, fullyQualifiedCategory: category, fullyQualifiedName: accountName, currency: 'USD', currentBalance: 0, type, status: 'Active'
         }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
         console.log(`Account creation response status: ${createResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts, pushOperationKey: ${createResponse.data.pushOperationKey}`);
-        // Initial delay to ensure operation is registered
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Increased to 10-second delay
+        await new Promise(resolve => setTimeout(resolve, 10000)); // 10-second delay
         let operationStatus = 'Pending';
         let attempt = 0;
         while (operationStatus === 'Pending' && attempt < 10) {
@@ -201,8 +200,25 @@ app.post('/api/sync', async (req, res) => {
           const journalResponse = await axios.post(`https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`, {
             postedOn: `${date}T00:00:00`, journalLines, modifiedDate: '0001-01-01T00:00:00'
           }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-          console.log(`Journal API response status: ${journalResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`);
-          if (journalResponse.data.status === 'Success') syncedDetails.push({ date, totalAmount, journalEntryId: journalResponse.data.data?.id || journalResponse.data.pushOperationKey });
+          console.log(`Journal API response status: ${journalResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries, Data: ${JSON.stringify(journalResponse.data)}`);
+          // Poll the journal push operation status
+          await new Promise(resolve => setTimeout(resolve, 5000)); // 5-second initial delay
+          let journalOperationStatus = 'Pending';
+          let attempt = 0;
+          let pushOperationKey = journalResponse.data.pushOperationKey;
+          while (journalOperationStatus === 'Pending' && attempt < 10) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            try {
+              const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+              console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
+              journalOperationStatus = operationResponse.data.status;
+              if (journalOperationStatus === 'Success') syncedDetails.push({ date, totalAmount, journalEntryId: operationResponse.data.data?.id || pushOperationKey });
+            } catch (error) {
+              console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
+              break;
+            }
+            attempt++;
+          }
         }
       }
       currentStart.setDate(chunkEnd.getDate() + 1);
