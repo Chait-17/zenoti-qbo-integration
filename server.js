@@ -375,14 +375,14 @@ app.post('/api/sync', async (req, res) => {
           });
 
           if (journalLines.length > 0) {
-            console.log(`Posting journal for date: ${date}, companyId: ${companyId}, request config:`, {
-              url: `https://api.codat.io/companies/${companyId}/data/journals`,
+            console.log(`Posting journal for date: ${date}, companyId: ${companyId}, connectionId: ${connectionId}, request config:`, {
+              url: `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`,
               method: 'POST',
               headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' },
               data: { journal: { journalLines, date } }
             });
             const journalResponse = await axios.post(
-              `https://api.codat.io/companies/${companyId}/data/journals`,
+              `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`,
               {
                 journal: {
                   journalLines,
