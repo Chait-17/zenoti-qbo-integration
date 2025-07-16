@@ -167,7 +167,7 @@ app.post('/api/sync', async (req, res) => {
     const categoryMap = {
       'Income': 'Income.Income.ServiceFeeIncome',
       'Liability': 'Liability.Other Current Liability.CurrentLiabilities',
-      'Asset': 'Asset.Other Current Asset.UndepositedFunds'
+      'Asset': 'Asset.Other Current Asset.OtherCurrentAssets'
     };
 
     // Fetch and process accounts
@@ -295,15 +295,16 @@ app.post('/api/sync', async (req, res) => {
         if (chunkEnd > end) chunkEnd.setDate(end.getDate());
 
         const currentCenterId = centerId; // Explicitly capture centerId for this scope
-        console.log(`Fetching sales for centerId: ${currentCenterId}, start: ${currentStart.toISOString().split('T')[0]}, end: ${chunkEnd.toISOString().split('T')[0]}`);
+        const params = { centerId: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] };
+        console.log(`Fetching sales for centerId: ${currentCenterId}, params: ${JSON.stringify(params)}`);
         const salesResponse = await axios.get(`https://api.zenoti.com/v1/sales/salesreport`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: { centerId: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
+          params: params
         });
-        console.log(`Fetching collections for centerId: ${currentCenterId}, start: ${currentStart.toISOString().split('T')[0]}, end: ${chunkEnd.toISOString().split('T')[0]}`);
+        console.log(`Fetching collections for centerId: ${currentCenterId}, params: ${JSON.stringify(params)}`);
         const collectionResponse = await axios.get(`https://api.zenoti.com/v1/collections_report`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: { centerId: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
+          params: params
         });
 
         const salesData = salesResponse.data.center_sales_report || [];
