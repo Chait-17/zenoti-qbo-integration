@@ -166,8 +166,8 @@ app.post('/api/sync', async (req, res) => {
     // Map account types to specific categories
     const categoryMap = {
       'Income': 'Income.Income.ServiceFeeIncome',
-      'Current Liability': 'Liability.Other Current Liability.CurrentLiabilities',
-      'Current Asset': 'Asset.Other Current Asset.UndepositedFunds'
+      'Liability': 'Liability.Other Current Liability.CurrentLiabilities',
+      'Asset': 'Asset.Other Current Asset.UndepositedFunds'
     };
 
     // Fetch and process accounts
@@ -184,13 +184,13 @@ app.post('/api/sync', async (req, res) => {
           'Zenoti service sales': { type: 'Income' },
           'Zenoti product sales': { type: 'Income' },
           'membership revenue account': { type: 'Income' },
-          'Zenoti package liability account': { type: 'Current Liability' },
-          'Zenoti gift card liability account': { type: 'Current Liability' }
+          'Zenoti package liability account': { type: 'Liability' },
+          'Zenoti gift card liability account': { type: 'Liability' }
         },
         collections: {
-          'Zenoti undeposited cash funds': { type: 'Current Asset' },
-          'Zenoti undeposited card payment': { type: 'Current Asset' },
-          'Zenoti package liability': { type: 'Current Liability' },
+          'Zenoti undeposited cash funds': { type: 'Asset' },
+          'Zenoti undeposited card payment': { type: 'Asset' },
+          'Zenoti package liability': { type: 'Liability' },
           'Membership redemptions': { type: 'Income' }
         }
       };
@@ -205,32 +205,28 @@ app.post('/api/sync', async (req, res) => {
             throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
           }
           console.log('Payload for account creation:', {
-            account: {
-              name: accountName,
-              description: `Account for ${accountName}`,
-              fullyQualifiedCategory: category,
-              fullyQualifiedName: accountName,
-              currency: 'USD',
-              currentBalance: 0,
-              type: type,
-              status: 'Active'
-            }
+            name: accountName,
+            description: `Account for ${accountName}`,
+            fullyQualifiedCategory: category,
+            fullyQualifiedName: accountName,
+            currency: 'USD',
+            currentBalance: 0,
+            type: type,
+            status: 'Active'
           });
           let pushOperationKey;
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
-                account: {
-                  name: accountName,
-                  description: `Account for ${accountName}`,
-                  fullyQualifiedCategory: category,
-                  fullyQualifiedName: accountName,
-                  currency: 'USD',
-                  currentBalance: 0,
-                  type: type,
-                  status: 'Active'
-                }
+                name: accountName,
+                description: `Account for ${accountName}`,
+                fullyQualifiedCategory: category,
+                fullyQualifiedName: accountName,
+                currency: 'USD',
+                currentBalance: 0,
+                type: type,
+                status: 'Active'
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
@@ -298,14 +294,16 @@ app.post('/api/sync', async (req, res) => {
         chunkEnd.setDate(chunkEnd.getDate() + 6);
         if (chunkEnd > end) chunkEnd.setDate(end.getDate());
 
-        console.log(`Fetching sales for centerId: ${centerId}, start: ${currentStart.toISOString().split('T')[0]}, end: ${chunkEnd.toISOString().split('T')[0]}`);
+        const currentCenterId = centerId; // Explicitly capture centerId for this scope
+        console.log(`Fetching sales for centerId: ${currentCenterId}, start: ${currentStart.toISOString().split('T')[0]}, end: ${chunkEnd.toISOString().split('T')[0]}`);
         const salesResponse = await axios.get(`https://api.zenoti.com/v1/sales/salesreport`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: { centerId: centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
+          params: { centerId: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
         });
+        console.log(`Fetching collections for centerId: ${currentCenterId}, start: ${currentStart.toISOString().split('T')[0]}, end: ${chunkEnd.toISOString().split('T')[0]}`);
         const collectionResponse = await axios.get(`https://api.zenoti.com/v1/collections_report`, {
           headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
-          params: { centerId: centerId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
+          params: { centerId: currentCenterId, startDate: currentStart.toISOString().split('T')[0], endDate: chunkEnd.toISOString().split('T')[0] }
         });
 
         const salesData = salesResponse.data.center_sales_report || [];
