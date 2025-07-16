@@ -197,6 +197,7 @@ app.post('/api/sync', async (req, res) => {
         }
       };
       accountMap = {};
+      console.log('Starting account creation loop');
       for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections })) {
         const normalizedName = accountName.toLowerCase().trim();
         let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
@@ -277,6 +278,7 @@ app.post('/api/sync', async (req, res) => {
         }
         accountMap[accountName] = account.id || accountMap[accountName] || null;
       }
+      console.log('Finished account creation loop, accountMap:', accountMap);
     } catch (accountsError) {
       console.error('Accounts error:', {
         message: accountsError.message,
