@@ -130,13 +130,15 @@ app.post('/api/sync', async (req, res) => {
         const createResponse = await axios.post(`https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`, {
           name: accountName, description: `Account for ${accountName}`, fullyQualifiedCategory: category, fullyQualifiedName: accountName, currency: 'USD', currentBalance: 0, type, status: 'Active'
         }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-        console.log(`Account creation response status: ${createResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`);
+        console.log(`Account creation response status: ${createResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts, pushOperationKey: ${createResponse.data.pushOperationKey}`);
+        // Initial delay to ensure operation is registered
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 5-second delay
         let operationStatus = 'Pending';
         let attempt = 0;
         while (operationStatus === 'Pending' && attempt < 10) {
           await new Promise(resolve => setTimeout(resolve, 2000));
           const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-          console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`);
+          console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, pushOperationKey: ${createResponse.data.pushOperationKey}`);
           operationStatus = operationResponse.data.status;
           if (operationStatus === 'Success') account = operationResponse.data.results?.data;
           attempt++;
