@@ -17,6 +17,9 @@ app.post('/api/centers', async (req, res) => {
         'Content-Type': 'application/json'
       }
     });
+    // Minimal logging to diagnose the issue
+    console.log('Zenoti API status:', response.status);
+    console.log('Zenoti API response data type:', typeof response.data);
     const centers = response.data.centers || response.data;
     if (centers && Array.isArray(centers)) {
       res.json({ centers });
@@ -24,8 +27,13 @@ app.post('/api/centers', async (req, res) => {
       res.json({ error: 'No centers found in response' });
     }
   } catch (error) {
-    console.error('Zenoti API error:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Failed to fetch centers from Zenoti: ' + (error.response?.data?.error || error.message) });
+    console.error('Zenoti API error:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      console.error('Response headers:', error.response.headers);
+    }
+    res.status(500).json({ error: 'Failed to load centers: ' + (error.response?.data?.error || error.message) });
   }
 });
 
