@@ -205,28 +205,32 @@ app.post('/api/sync', async (req, res) => {
             throw new Error(`Invalid category ${category} for type ${type}. Available: ${validCategories.join(', ')}`);
           }
           console.log('Payload for account creation:', {
-            name: accountName,
-            description: `Account for ${accountName}`,
-            fullyQualifiedCategory: category,
-            fullyQualifiedName: accountName,
-            currency: 'USD',
-            currentBalance: 0,
-            type: type,
-            status: 'Active'
+            account: {
+              name: accountName,
+              description: `Account for ${accountName}`,
+              fullyQualifiedCategory: category,
+              fullyQualifiedName: accountName,
+              currency: 'USD',
+              currentBalance: 0,
+              type: type,
+              status: 'Active'
+            }
           });
           let pushOperationKey;
           try {
             const createResponse = await axios.post(
               `https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`,
               {
-                name: accountName,
-                description: `Account for ${accountName}`,
-                fullyQualifiedCategory: category,
-                fullyQualifiedName: accountName,
-                currency: 'USD',
-                currentBalance: 0,
-                type: type,
-                status: 'Active'
+                account: {
+                  name: accountName,
+                  description: `Account for ${accountName}`,
+                  fullyQualifiedCategory: category,
+                  fullyQualifiedName: accountName,
+                  currency: 'USD',
+                  currentBalance: 0,
+                  type: type,
+                  status: 'Active'
+                }
               },
               { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } }
             );
