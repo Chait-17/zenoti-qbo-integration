@@ -86,6 +86,7 @@ app.post('/api/sync', async (req, res) => {
     let nextUrl = 'https://api.codat.io/companies?page=1&pageSize=100';
     while (nextUrl) {
       const companiesResponse = await axios({ method: 'get', url: nextUrl, headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+      console.log(`Companies API response status: ${companiesResponse.status}, URL: ${nextUrl}`);
       allCompanies = allCompanies.concat(companiesResponse.data.results || []);
       nextUrl = companiesResponse.data._links?.next?.href;
       if (nextUrl && !nextUrl.startsWith('http')) nextUrl = `https://api.codat.io${nextUrl}`;
@@ -96,11 +97,13 @@ app.post('/api/sync', async (req, res) => {
     const companyId = company.id;
 
     const connectionsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/connections`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+    console.log(`Connections API response status: ${connectionsResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections`);
     const connectionId = connectionsResponse.data.results[0]?.id;
     if (!connectionId) throw new Error('No connection found');
 
     let validCategories = [];
     const optionsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/connections/${connectionId}/options/chartOfAccounts`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+    console.log(`Options API response status: ${optionsResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/options/chartOfAccounts`);
     validCategories = optionsResponse.data.properties.fullyQualifiedCategory.options.map(opt => opt.value);
 
     const categoryMap = {
@@ -111,6 +114,7 @@ app.post('/api/sync', async (req, res) => {
 
     let accountMap;
     const accountsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/data/accounts`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+    console.log(`Accounts API response status: ${accountsResponse.status}, URL: https://api.codat.io/companies/${companyId}/data/accounts`);
     const existingAccounts = accountsResponse.data.results || [];
     const requiredAccounts = {
       sales: { 'Zenoti service sales': { type: 'Income' }, 'Zenoti product sales': { type: 'Income' }, 'membership revenue account': { type: 'Income' }, 'Zenoti package liability account': { type: 'Liability' }, 'Zenoti gift card liability account': { type: 'Liability' } },
@@ -126,11 +130,13 @@ app.post('/api/sync', async (req, res) => {
         const createResponse = await axios.post(`https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`, {
           name: accountName, description: `Account for ${accountName}`, fullyQualifiedCategory: category, fullyQualifiedName: accountName, currency: 'USD', currentBalance: 0, type, status: 'Active'
         }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+        console.log(`Account creation response status: ${createResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts`);
         let operationStatus = 'Pending';
         let attempt = 0;
         while (operationStatus === 'Pending' && attempt < 10) {
           await new Promise(resolve => setTimeout(resolve, 2000));
           const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+          console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`);
           operationStatus = operationResponse.data.status;
           if (operationStatus === 'Success') account = operationResponse.data.results?.data;
           attempt++;
@@ -151,10 +157,12 @@ app.post('/api/sync', async (req, res) => {
         headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
         params: { center_id: centerId, start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] }
       });
+      console.log(`Sales API response status: ${salesResponse.status}, URL: https://api.zenoti.com/v1/sales/salesreport`);
       const collectionResponse = await axios.get(`https://api.zenoti.com/v1/Centers/${centerId}/collections_report`, {
         headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
         params: { start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] }
       });
+      console.log(`Collections API response status: ${collectionResponse.status}, URL: https://api.zenoti.com/v1/Centers/${centerId}/collections_report`);
 
       const salesData = salesResponse.data.center_sales_report || [];
       const collectionData = collectionResponse.data.collections_report || [];
@@ -186,6 +194,7 @@ app.post('/api/sync', async (req, res) => {
           const journalResponse = await axios.post(`https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`, {
             postedOn: `${date}T00:00:00`, journalLines, modifiedDate: '0001-01-01T00:00:00'
           }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+          console.log(`Journal API response status: ${journalResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`);
           if (journalResponse.data.status === 'Success') syncedDetails.push({ date, totalAmount, journalEntryId: journalResponse.data.data?.id || journalResponse.data.pushOperationKey });
         }
       }
@@ -194,6 +203,7 @@ app.post('/api/sync', async (req, res) => {
 
     res.json({ syncedDetails });
   } catch (error) {
+    console.error(`Sync error: ${error.message}, Stack: ${error.stack}`);
     res.status(500).json({ error: `Sync failed: ${error.message}` });
   }
 });
