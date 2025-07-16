@@ -226,6 +226,7 @@ app.post('/api/sync', async (req, res) => {
         }
 
         if (journalLines.length > 0) {
+          console.log(`Journal Lines for ${date}: ${JSON.stringify(journalLines)}`);
           const totalDebit = journalLines.filter(line => line.netAmount < 0).reduce((sum, line) => sum + -line.netAmount, 0);
           const totalCredit = journalLines.filter(line => line.netAmount > 0).reduce((sum, line) => sum + line.netAmount, 0);
           console.log(`For ${date}: Total Debits ${totalDebit}, Total Credits ${totalCredit}`);
