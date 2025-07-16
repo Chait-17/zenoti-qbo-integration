@@ -119,7 +119,7 @@ app.post('/api/sync', async (req, res) => {
     const requiredAccounts = {
       sales: { 'Zenoti service sales': { type: 'Income' }, 'Zenoti product sales': { type: 'Income' }, 'membership revenue account': { type: 'Income' }, 'Zenoti package liability account': { type: 'Liability' }, 'Zenoti gift card liability account': { type: 'Liability' } },
       collections: { 'Zenoti undeposited cash funds': { type: 'Asset' }, 'Zenoti undeposited card payment': { type: 'Asset' }, 'Zenoti package liability': { type: 'Liability' }, 'Membership redemptions': { type: 'Income' } },
-      due: { 'Due Amount': { type: 'Asset' } } // Updated to Current Asset
+      due: { 'Due Amount': { type: 'Asset' } }
     };
     accountMap = {};
     for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections, ...requiredAccounts.due })) {
@@ -164,12 +164,12 @@ app.post('/api/sync', async (req, res) => {
         headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
         params: { center_id: centerId, start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] }
       });
-      console.log(`Sales API response status: ${salesResponse.status}, URL: https://api.zenoti.com/v1/sales/salesreport`);
+      console.log(`Sales API response status: ${salesResponse.status}, URL: https://api.zenoti.com/v1/sales/salesreport, Data: ${JSON.stringify(salesResponse.data)}`);
       const collectionResponse = await axios.get(`https://api.zenoti.com/v1/Centers/${centerId}/collections_report`, {
         headers: { 'Authorization': `apikey ${apiKey}`, 'Content-Type': 'application/json' },
         params: { start_date: currentStart.toISOString().split('T')[0], end_date: chunkEnd.toISOString().split('T')[0] }
       });
-      console.log(`Collections API response status: ${collectionResponse.status}, URL: https://api.zenoti.com/v1/Centers/${centerId}/collections_report`);
+      console.log(`Collections API response status: ${collectionResponse.status}, URL: https://api.zenoti.com/v1/Centers/${centerId}/collections_report, Data: ${JSON.stringify(collectionResponse.data)}`);
 
       const salesData = salesResponse.data.center_sales_report || [];
       const collectionData = collectionResponse.data.collections_report || [];
@@ -182,15 +182,17 @@ app.post('/api/sync', async (req, res) => {
       });
 
       for (const [date, { sales, refunds, payments, redemptions, refundPayments }] of Object.entries(transactionsByDate)) {
+        console.log(`Processing date ${date}: Sales ${sales.length}, Refunds ${refunds.length}, Payments ${payments.length}, Redemptions ${redemptions.length}, RefundPayments ${refundPayments.length}`);
         let totalSales = sales.reduce((sum, tx) => sum + (tx.final_sale_price || 0), 0);
         let totalRefunds = refunds.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
         let totalPayments = payments.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
         let totalRedemptions = redemptions.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
         let totalRefundPayments = refundPayments.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
 
-        let netSales = totalSales - totalRefunds; // Net sales after refunds
-        let netPayments = totalPayments + totalRedemptions - totalRefundPayments; // Net payments after refund payments
-        let dueAmount = netPayments - netSales; // Difference to balance
+        let netSales = totalSales - totalRefunds;
+        let netPayments = totalPayments + totalRedemptions - totalRefundPayments;
+        let dueAmount = netPayments - netSales;
+        console.log(`For ${date}: netSales ${netSales}, netPayments ${netPayments}, dueAmount ${dueAmount}`);
 
         const journalLines = [];
         // Credit sales
@@ -218,16 +220,15 @@ app.post('/api/sync', async (req, res) => {
           const amount = tx.total_collection || 0;
           if (accountMap['Zenoti package liability account'] && amount > 0) journalLines.push({ description: tx.items[0].name || 'Refund Payment', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
         });
-        // Add due amount to balance (Debit if negative, Credit if positive for Asset account)
-        if (dueAmount !== 0) {
-          if (accountMap['Due Amount']) {
-            journalLines.push({ description: 'Due Amount', netAmount: dueAmount > 0 ? -dueAmount : dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
-          }
+        // Add due amount to balance (Debit if sales > payments, Credit if payments > sales for Asset account)
+        if (dueAmount !== 0 && accountMap['Due Amount']) {
+          journalLines.push({ description: 'Due Amount', netAmount: dueAmount < 0 ? -dueAmount : dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
         }
 
         if (journalLines.length > 0) {
           const totalDebit = journalLines.filter(line => line.netAmount < 0).reduce((sum, line) => sum + -line.netAmount, 0);
           const totalCredit = journalLines.filter(line => line.netAmount > 0).reduce((sum, line) => sum + line.netAmount, 0);
+          console.log(`For ${date}: Total Debits ${totalDebit}, Total Credits ${totalCredit}`);
           if (Math.abs(totalDebit - totalCredit) > 0.01) { // Allow for minor rounding differences
             throw new Error(`Journal for ${date} is unbalanced: Debits ${totalDebit}, Credits ${totalCredit}`);
           }
