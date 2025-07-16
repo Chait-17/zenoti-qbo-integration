@@ -17,7 +17,6 @@ app.post('/api/centers', async (req, res) => {
         'Content-Type': 'application/json'
       }
     });
-    // Minimal logging to diagnose the issue
     console.log('Zenoti API status:', response.status);
     console.log('Zenoti API response data type:', typeof response.data);
     const centers = response.data.centers || response.data;
@@ -281,7 +280,6 @@ app.post('/api/sync', async (req, res) => {
         } else {
           console.log(`Account already exists: ${accountName}, ID: ${account.id}`);
           accountMap[accountName] = account.id;
-          continue;
         }
         accountMap[accountName] = account.id || accountMap[accountName] || null;
       }
