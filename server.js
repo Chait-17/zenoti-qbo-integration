@@ -22,7 +22,7 @@ app.post('/api/centers', async (req, res) => {
     if (centers && Array.isArray(centers)) {
       res.json({ centers });
     } else {
-      res.json({ error: 'No centers found' });
+      res.json({ error: 'No refunds found' });
     }
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch centers: ' + (error.response?.data?.error || error.message) });
@@ -118,10 +118,11 @@ app.post('/api/sync', async (req, res) => {
     const existingAccounts = accountsResponse.data.results || [];
     const requiredAccounts = {
       sales: { 'Zenoti service sales': { type: 'Income' }, 'Zenoti product sales': { type: 'Income' }, 'membership revenue account': { type: 'Income' }, 'Zenoti package liability account': { type: 'Liability' }, 'Zenoti gift card liability account': { type: 'Liability' } },
-      collections: { 'Zenoti undeposited cash funds': { type: 'Asset' }, 'Zenoti undeposited card payment': { type: 'Asset' }, 'Zenoti package liability': { type: 'Liability' }, 'Membership redemptions': { type: 'Income' } }
+      collections: { 'Zenoti undeposited cash funds': { type: 'Asset' }, 'Zenoti undeposited card payment': { type: 'Asset' }, 'Zenoti package liability': { type: 'Liability' }, 'Membership redemptions': { type: 'Income' } },
+      due: { 'Due Amount': { type: 'Asset' } } // Updated to Current Asset
     };
     accountMap = {};
-    for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections })) {
+    for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections, ...requiredAccounts.due })) {
       const normalizedName = accountName.toLowerCase().trim();
       let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
       if (!account) {
@@ -173,35 +174,68 @@ app.post('/api/sync', async (req, res) => {
       const salesData = salesResponse.data.center_sales_report || [];
       const collectionData = collectionResponse.data.collections_report || [];
       const transactionsByDate = {};
-      salesData.forEach(tx => { const date = new Date(tx.sold_on).toISOString().split('T')[0]; (transactionsByDate[date] ||= { sales: [], collections: [] }).sales.push(tx); });
-      collectionData.forEach(tx => { const date = new Date(tx.created_date).toISOString().split('T')[0]; (transactionsByDate[date] ||= { sales: [], collections: [] }).collections.push(tx); });
+      salesData.forEach(tx => { const date = new Date(tx.sold_on).toISOString().split('T')[0]; (transactionsByDate[date] ||= { sales: [], refunds: [], payments: [], redemptions: [], refundPayments: [] }).sales.push(tx); });
+      collectionData.forEach(tx => {
+        const date = new Date(tx.created_date).toISOString().split('T')[0];
+        const type = tx.items[0].type;
+        (transactionsByDate[date] ||= { sales: [], refunds: [], payments: [], redemptions: [], refundPayments: [] })[type === 'Refund' ? 'refunds' : type === 'Payment' ? 'payments' : type === 'Redemption' ? 'redemptions' : type === 'RefundPayment' ? 'refundPayments' : 'payments'].push(tx);
+      });
 
-      for (const [date, { sales, collections }] of Object.entries(transactionsByDate)) {
-        let totalAmount = 0;
+      for (const [date, { sales, refunds, payments, redemptions, refundPayments }] of Object.entries(transactionsByDate)) {
+        let totalSales = sales.reduce((sum, tx) => sum + (tx.final_sale_price || 0), 0);
+        let totalRefunds = refunds.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
+        let totalPayments = payments.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
+        let totalRedemptions = redemptions.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
+        let totalRefundPayments = refundPayments.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
+
+        let netSales = totalSales - totalRefunds; // Net sales after refunds
+        let netPayments = totalPayments + totalRedemptions - totalRefundPayments; // Net payments after refund payments
+        let dueAmount = netPayments - netSales; // Difference to balance
+
         const journalLines = [];
+        // Credit sales
         sales.forEach(tx => {
           const account = [0, 2, 3, 4, 6].includes(tx.item.type) ? ['Zenoti service sales', 'Zenoti product sales', 'membership revenue account', 'Zenoti package liability account', 'Zenoti gift card liability account'][tx.item.type] : 'Zenoti service sales';
           const amount = tx.final_sale_price || 0;
-          totalAmount += amount;
-          if (accountMap[account]) journalLines.push({ description: tx.item.name || 'Sale', netAmount: amount, currency: 'USD', accountRef: { id: accountMap[account] } });
-          const debitAccount = accountMap['Zenoti undeposited cash funds'] || accountMap['Zenoti undeposited card payment'];
-          if (debitAccount) journalLines.push({ description: tx.item.name || 'Sale Debit', netAmount: -amount, currency: 'USD', accountRef: { id: debitAccount } });
+          if (accountMap[account] && amount > 0) journalLines.push({ description: tx.item.name || 'Sale', netAmount: amount, currency: 'USD', accountRef: { id: accountMap[account] } });
         });
-        collections.forEach(tx => {
-          const account = { cash: 'Zenoti undeposited cash funds', CC: 'Zenoti undeposited card payment', Package: 'Zenoti package liability', Membership: 'Membership redemptions', GiftCard: 'Zenoti gift card liability account', PrepaidCard: 'Zenoti prepaid card liability account' }[tx.items[0].type] || 'Zenoti undeposited cash funds';
+        // Debit refunds
+        refunds.forEach(tx => {
           const amount = tx.total_collection || 0;
-          totalAmount += amount;
-          if (accountMap[account]) journalLines.push({ description: tx.items[0].name || 'Collection', netAmount: amount, currency: 'USD', accountRef: { id: accountMap[account] } });
-          const creditAccount = accountMap['membership revenue account'] || accountMap['Zenoti package liability account'];
-          if (creditAccount) journalLines.push({ description: tx.items[0].name || 'Collection Credit', netAmount: -amount, currency: 'USD', accountRef: { id: creditAccount } });
+          if (accountMap['Zenoti undeposited cash funds'] && amount > 0) journalLines.push({ description: tx.items[0].name || 'Refund', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
         });
+        // Debit payments and redemptions
+        payments.forEach(tx => {
+          const amount = tx.total_collection || 0;
+          if (accountMap['Zenoti undeposited cash funds'] && amount > 0) journalLines.push({ description: tx.items[0].name || 'Payment', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
+        });
+        redemptions.forEach(tx => {
+          const amount = tx.total_collection || 0;
+          if (accountMap['Membership redemptions'] && amount > 0) journalLines.push({ description: tx.items[0].name || 'Redemption', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Membership redemptions'] } });
+        });
+        // Credit refund payments
+        refundPayments.forEach(tx => {
+          const amount = tx.total_collection || 0;
+          if (accountMap['Zenoti package liability account'] && amount > 0) journalLines.push({ description: tx.items[0].name || 'Refund Payment', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
+        });
+        // Add due amount to balance (Debit if negative, Credit if positive for Asset account)
+        if (dueAmount !== 0) {
+          if (accountMap['Due Amount']) {
+            journalLines.push({ description: 'Due Amount', netAmount: dueAmount > 0 ? -dueAmount : dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
+          }
+        }
 
         if (journalLines.length > 0) {
+          const totalDebit = journalLines.filter(line => line.netAmount < 0).reduce((sum, line) => sum + -line.netAmount, 0);
+          const totalCredit = journalLines.filter(line => line.netAmount > 0).reduce((sum, line) => sum + line.netAmount, 0);
+          if (Math.abs(totalDebit - totalCredit) > 0.01) { // Allow for minor rounding differences
+            throw new Error(`Journal for ${date} is unbalanced: Debits ${totalDebit}, Credits ${totalCredit}`);
+          }
+
           const journalResponse = await axios.post(`https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries`, {
             postedOn: `${date}T00:00:00`, journalLines, modifiedDate: '0001-01-01T00:00:00'
           }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
           console.log(`Journal API response status: ${journalResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/journalEntries, Data: ${JSON.stringify(journalResponse.data)}`);
-          // Poll the journal push operation status
           await new Promise(resolve => setTimeout(resolve, 5000)); // 5-second initial delay
           let journalOperationStatus = 'Pending';
           let attempt = 0;
@@ -212,7 +246,7 @@ app.post('/api/sync', async (req, res) => {
               const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
               console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
               journalOperationStatus = operationResponse.data.status;
-              if (journalOperationStatus === 'Success') syncedDetails.push({ date, totalAmount, journalEntryId: operationResponse.data.data?.id || pushOperationKey });
+              if (journalOperationStatus === 'Success') syncedDetails.push({ date, totalAmount: totalDebit, journalEntryId: operationResponse.data.data?.id || pushOperationKey });
             } catch (error) {
               console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
               break;
