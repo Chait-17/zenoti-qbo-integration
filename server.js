@@ -124,7 +124,7 @@ app.post('/api/sync', async (req, res) => {
     accountMap = {};
     for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections, ...requiredAccounts.due })) {
       const normalizedName = accountName.toLowerCase().trim();
-      let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
+      let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
       if (!account) {
         const category = categoryMap[type];
         if (!category || !validCategories.includes(category)) throw new Error(`Invalid category ${category}`);
@@ -144,7 +144,12 @@ app.post('/api/sync', async (req, res) => {
             const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
             console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
             operationStatus = operationResponse.data.status;
-            if (operationStatus === 'Success') account = operationResponse.data.results?.data;
+            if (operationStatus === 'Success') {
+              account = operationResponse.data.results?.data;
+            } else if (operationStatus === 'Failed' && operationResponse.data.errorMessage && operationResponse.data.errorMessage.includes('already exists')) {
+              account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
+              break;
+            }
           } catch (error) {
             if (error.response?.status === 404) {
               console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`);
@@ -158,7 +163,7 @@ app.post('/api/sync', async (req, res) => {
         }
         if (!account) {
           console.warn(`Account ${accountName} creation timed out or failed, proceeding with existing check`);
-          account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName); // Fallback to existing check
+          account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
         }
       }
       if (account) {
