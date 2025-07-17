@@ -132,25 +132,31 @@ app.post('/api/sync', async (req, res) => {
           name: accountName, description: `Account for ${accountName}`, fullyQualifiedCategory: category, fullyQualifiedName: accountName, currency: 'USD', currentBalance: 0, type, status: 'Active'
         }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
         console.log(`Account creation response status: ${createResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts, pushOperationKey: ${createResponse.data.pushOperationKey}`);
-        await new Promise(resolve => setTimeout(resolve, 10000)); // 10-second delay
+        await new Promise(resolve => setTimeout(resolve, 20000)); // Increased delay to 20 seconds
         let operationStatus = 'Pending';
         let attempt = 0;
-        while (operationStatus === 'Pending' && attempt < 10) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+        while (operationStatus === 'Pending' && attempt < 15) { // Increased max attempts
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Increased wait to 5 seconds
           try {
             const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
             console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, pushOperationKey: ${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
             operationStatus = operationResponse.data.status;
             if (operationStatus === 'Success') account = operationResponse.data.results?.data;
           } catch (error) {
-            console.error(`Operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
-            break;
+            if (error.response?.status === 404) {
+              console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`);
+              continue; // Retry on 404
+            } else {
+              console.error(`Operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
+              break;
+            }
           }
           attempt++;
         }
       }
-      accountMap[accountName] = account?.id || null;
-      if (!accountMap[accountName]) {
+      if (account) {
+        accountMap[accountName] = account.id;
+      } else {
         throw new Error(`Account ${accountName} not found or creation failed`);
       }
     }
