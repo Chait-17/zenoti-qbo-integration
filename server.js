@@ -150,6 +150,13 @@ app.post('/api/sync', async (req, res) => {
             console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}, pushOperationKey: ${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
             operationStatus = operationResponse.data.status;
             if (operationStatus === 'Success') account = operationResponse.data.results?.data;
+            else if (operationStatus === 'Failed' && operationResponse.data.errorMessage && operationResponse.data.errorMessage.includes('The name supplied already exists')) {
+              const idMatch = operationResponse.data.errorMessage.match(/Id=(\d+)/);
+              if (idMatch) {
+                account = { id: idMatch[1] }; // Use the existing account ID
+                console.log(`Account ${accountName} already exists with ID ${account.id}, skipping creation`);
+              }
+            }
           } catch (error) {
             if (error.response?.status === 404) {
               console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`);
@@ -315,6 +322,14 @@ app.post('/api/sync', async (req, res) => {
               console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
               journalOperationStatus = operationResponse.data.status;
               if (journalOperationStatus === 'Success') syncedDetails.push({ date, totalAmount: totalDebit, journalEntryId: operationResponse.data.data?.id || pushOperationKey });
+              else if (journalOperationStatus === 'Failed' && operationResponse.data.errorMessage && operationResponse.data.errorMessage.includes('The name supplied already exists')) {
+                const idMatch = operationResponse.data.errorMessage.match(/Id=(\d+)/);
+                if (idMatch) {
+                  accountMap['Due Amount'] = idMatch[1]; // Update accountMap with existing ID
+                  console.log(`Journal entry account Due Amount already exists with ID ${idMatch[1]}, skipping creation`);
+                  syncedDetails.push({ date, totalAmount: totalDebit, journalEntryId: pushOperationKey }); // Proceed with sync
+                }
+              }
             } catch (error) {
               console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
               break;
