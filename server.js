@@ -201,39 +201,69 @@ app.post('/api/sync', async (req, res) => {
 
         const journalLines = [];
         // Credit sales by type
+        const typeMap = { 0: 'Service', 2: 'Product', 3: 'Membership', 4: 'Package', 6: 'Gift Card' };
         if (salesByType[0] > 0 && accountMap['Zenoti service sales']) {
-          journalLines.push({ description: 'Service', netAmount: salesByType[0], currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
+          journalLines.push({ description: typeMap[0], netAmount: salesByType[0], currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
         }
         if (salesByType[2] > 0 && accountMap['Zenoti product sales']) {
-          journalLines.push({ description: 'Product', netAmount: salesByType[2], currency: 'USD', accountRef: { id: accountMap['Zenoti product sales'] } });
+          journalLines.push({ description: typeMap[2], netAmount: salesByType[2], currency: 'USD', accountRef: { id: accountMap['Zenoti product sales'] } });
         }
         if (salesByType[3] > 0 && accountMap['membership revenue account']) {
-          journalLines.push({ description: 'Membership', netAmount: salesByType[3], currency: 'USD', accountRef: { id: accountMap['membership revenue account'] } });
+          journalLines.push({ description: typeMap[3], netAmount: salesByType[3], currency: 'USD', accountRef: { id: accountMap['membership revenue account'] } });
         }
         if (salesByType[4] > 0 && accountMap['Zenoti package liability account']) {
-          journalLines.push({ description: 'Package', netAmount: salesByType[4], currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
+          journalLines.push({ description: typeMap[4], netAmount: salesByType[4], currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
         }
         if (salesByType[6] > 0 && accountMap['Zenoti gift card liability account']) {
-          journalLines.push({ description: 'Gift Card', netAmount: salesByType[6], currency: 'USD', accountRef: { id: accountMap['Zenoti gift card liability account'] } });
+          journalLines.push({ description: typeMap[6], netAmount: salesByType[6], currency: 'USD', accountRef: { id: accountMap['Zenoti gift card liability account'] } });
         }
         // Debit refunds
         refunds.forEach(tx => {
           const amount = tx.total_collection || 0;
-          if (accountMap['Zenoti undeposited cash funds'] && amount > 0) journalLines.push({ description: 'Refund', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
+          if (accountMap['Zenoti undeposited cash funds'] && amount > 0) {
+            journalLines.push({ description: 'Refund', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
+            // Credit to offset refund (e.g., reduce sales or liability)
+            journalLines.push({ description: 'Refund Offset', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } }); // Adjust account as needed
+          }
         });
-        // Debit payments and redemptions
+        // Debit payments based on payment method and credit receivables
         payments.forEach(tx => {
-          const amount = tx.total_collection || 0;
-          if (accountMap['Zenoti undeposited cash funds'] && amount > 0) journalLines.push({ description: 'Payment', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
+          tx.items[0].payments.forEach(payment => {
+            const amount = payment.amount || 0;
+            if (amount > 0) {
+              // Map payment type to account
+              let paymentAccount;
+              if (payment.type === 'CC') {
+                paymentAccount = accountMap['Zenoti undeposited card payment']; // Debit card payments
+              } else if (payment.type === 'Cash' || (salesData.some(s => s.payment_type === 'Cash' && s.invoice_no === tx.invoice_no))) {
+                paymentAccount = accountMap['Zenoti undeposited cash funds']; // Debit cash payments
+              } else {
+                paymentAccount = accountMap['Zenoti undeposited cash funds']; // Default to cash if unknown
+              }
+              if (paymentAccount) {
+                journalLines.push({ description: `Payment (${payment.type} ${payment.detail_type})`, netAmount: -amount, currency: 'USD', accountRef: { id: paymentAccount } });
+                // Credit receivables to balance
+                journalLines.push({ description: 'Payment Received', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
+              }
+            }
+          });
         });
+        // Debit redemptions and credit revenue
         redemptions.forEach(tx => {
           const amount = tx.total_collection || 0;
-          if (accountMap['Membership redemptions'] && amount > 0) journalLines.push({ description: 'Redemption', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Membership redemptions'] } });
+          if (accountMap['Membership redemptions'] && amount > 0) {
+            journalLines.push({ description: 'Redemption', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Membership redemptions'] } });
+            journalLines.push({ description: 'Redemption Revenue', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['membership revenue account'] } });
+          }
         });
-        // Credit refund payments
+        // Credit refund payments to liability
         refundPayments.forEach(tx => {
           const amount = tx.total_collection || 0;
-          if (accountMap['Zenoti package liability account'] && amount > 0) journalLines.push({ description: 'Refund Payment', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
+          if (accountMap['Zenoti package liability account'] && amount > 0) {
+            journalLines.push({ description: 'Refund Payment', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
+            // Debit to balance (e.g., cash or undeposited funds)
+            journalLines.push({ description: 'Refund Payment Offset', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
+          }
         });
         // Add due amount to balance (Debit if sales > payments, Credit if payments > sales for Asset account)
         if (dueAmount !== 0 && accountMap['Due Amount']) {
