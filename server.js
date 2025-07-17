@@ -146,17 +146,17 @@ app.post('/api/sync', async (req, res) => {
         while (operationStatus === 'Pending' && attempt < 5) { // Reduced to 5 attempts
           await new Promise(resolve => setTimeout(resolve, waitTime));
           try {
-            const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-            console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, pushOperationKey: ${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
+            const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+            console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}, pushOperationKey: ${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
             operationStatus = operationResponse.data.status;
             if (operationStatus === 'Success') account = operationResponse.data.results?.data;
           } catch (error) {
             if (error.response?.status === 404) {
-              console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`);
+              console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`);
               waitTime *= 2; // Exponential backoff
               continue;
             } else {
-              console.error(`Operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
+              console.error(`Operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
               break;
             }
           }
@@ -311,12 +311,12 @@ app.post('/api/sync', async (req, res) => {
           while (journalOperationStatus === 'Pending' && attempt < 10) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             try {
-              const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-              console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
+              const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/${pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+              console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
               journalOperationStatus = operationResponse.data.status;
               if (journalOperationStatus === 'Success') syncedDetails.push({ date, totalAmount: totalDebit, journalEntryId: operationResponse.data.data?.id || pushOperationKey });
             } catch (error) {
-              console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
+              console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
               break;
             }
             attempt++;
