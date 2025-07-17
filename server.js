@@ -269,13 +269,6 @@ app.post('/api/sync', async (req, res) => {
               }
               if (paymentAccount) {
                 journalLines.push({ description: `Payment (${payment.type} ${payment.detail_type})`, netAmount: -amount, currency: 'USD', accountRef: { id: paymentAccount } });
-                // Credit the corresponding sales or liability account
-                let salesAccount = accountMap['Zenoti service sales']; // Default to service sales
-                if (salesData.some(s => s.item.type === 2 && s.invoice_no === tx.invoice_no)) salesAccount = accountMap['Zenoti product sales'];
-                else if (salesData.some(s => s.item.type === 3 && s.invoice_no === tx.invoice_no)) salesAccount = accountMap['membership revenue account'];
-                else if (salesData.some(s => s.item.type === 4 && s.invoice_no === tx.invoice_no)) salesAccount = accountMap['Zenoti package liability account'];
-                else if (salesData.some(s => s.item.type === 6 && s.invoice_no === tx.invoice_no)) salesAccount = accountMap['Zenoti gift card liability account'];
-                journalLines.push({ description: 'Payment Received', netAmount: amount, currency: 'USD', accountRef: { id: salesAccount } });
               }
             }
           });
@@ -298,12 +291,13 @@ app.post('/api/sync', async (req, res) => {
         });
         // Add due amount (debit if sales > collections, credit if collections > sales)
         if (dueAmount !== 0 && accountMap['Due Amount']) {
-          journalLines.push({ description: 'Due Amount', netAmount: dueAmount > 0 ? dueAmount : -dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
-          // Add counter entry to balance
+          const dueAmountEntry = dueAmount > 0 ? dueAmount : -dueAmount;
+          journalLines.push({ description: 'Due Amount', netAmount: dueAmountEntry, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
+          // Offset with sales account for debit, collections account for credit
           if (dueAmount > 0) {
-            journalLines.push({ description: 'Due Amount Offset', netAmount: -dueAmount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } }); // Offset against sales
+            journalLines.push({ description: 'Due Amount Offset', netAmount: -dueAmount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
           } else {
-            journalLines.push({ description: 'Due Amount Offset', netAmount: dueAmount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } }); // Offset against collections
+            journalLines.push({ description: 'Due Amount Offset', netAmount: dueAmount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
           }
         }
 
