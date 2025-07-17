@@ -174,16 +174,21 @@ app.post('/api/sync', async (req, res) => {
       const salesData = salesResponse.data.center_sales_report || [];
       const collectionData = collectionResponse.data.collections_report || [];
       const transactionsByDate = {};
-      salesData.forEach(tx => { const date = new Date(tx.sold_on).toISOString().split('T')[0]; (transactionsByDate[date] ||= { sales: [], refunds: [], payments: [], redemptions: [], refundPayments: [] }).sales.push(tx); });
+      salesData.forEach(tx => {
+        const date = (tx.item.type === 0 ? new Date(tx.serviced_on) : new Date(tx.sold_on)).toISOString().split('T')[0];
+        if (date !== '0001-01-01' && tx.final_sale_price > 0) {
+          (transactionsByDate[date] ||= { salesByType: { 0: 0, 2: 0, 3: 0, 4: 0, 6: 0 }, refunds: [], payments: [], redemptions: [], refundPayments: [] }).salesByType[tx.item.type] += tx.final_sale_price;
+        }
+      });
       collectionData.forEach(tx => {
         const date = new Date(tx.created_date).toISOString().split('T')[0];
         const type = tx.items[0].type;
-        (transactionsByDate[date] ||= { sales: [], refunds: [], payments: [], redemptions: [], refundPayments: [] })[type === 'Refund' ? 'refunds' : type === 'Payment' ? 'payments' : type === 'Redemption' ? 'redemptions' : type === 'RefundPayment' ? 'refundPayments' : 'payments'].push(tx);
+        (transactionsByDate[date] ||= { salesByType: { 0: 0, 2: 0, 3: 0, 4: 0, 6: 0 }, refunds: [], payments: [], redemptions: [], refundPayments: [] })[type === 'Refund' ? 'refunds' : type === 'Payment' ? 'payments' : type === 'Redemption' ? 'redemptions' : type === 'RefundPayment' ? 'refundPayments' : 'payments'].push(tx);
       });
 
-      for (const [date, { sales, refunds, payments, redemptions, refundPayments }] of Object.entries(transactionsByDate)) {
-        console.log(`Processing date ${date}: Sales ${sales.length}, Refunds ${refunds.length}, Payments ${payments.length}, Redemptions ${redemptions.length}, RefundPayments ${refundPayments.length}`);
-        let totalSales = sales.reduce((sum, tx) => sum + (tx.final_sale_price || 0), 0);
+      for (const [date, { salesByType, refunds, payments, redemptions, refundPayments }] of Object.entries(transactionsByDate)) {
+        console.log(`Processing date ${date}: SalesByType ${JSON.stringify(salesByType)}, Refunds ${refunds.length}, Payments ${payments.length}, Redemptions ${redemptions.length}, RefundPayments ${refundPayments.length}`);
+        let totalSales = Object.values(salesByType).reduce((sum, value) => sum + value, 0);
         let totalRefunds = refunds.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
         let totalPayments = payments.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
         let totalRedemptions = redemptions.reduce((sum, tx) => sum + (tx.total_collection || 0), 0);
@@ -195,12 +200,22 @@ app.post('/api/sync', async (req, res) => {
         console.log(`For ${date}: netSales ${netSales}, netPayments ${netPayments}, dueAmount ${dueAmount}`);
 
         const journalLines = [];
-        // Credit sales
-        sales.forEach(tx => {
-          const account = [0, 2, 3, 4, 6].includes(tx.item.type) ? ['Zenoti service sales', 'Zenoti product sales', 'membership revenue account', 'Zenoti package liability account', 'Zenoti gift card liability account'][tx.item.type] : 'Zenoti service sales';
-          const amount = tx.final_sale_price || 0;
-          if (accountMap[account] && amount > 0) journalLines.push({ description: tx.item.name || 'Sale', netAmount: amount, currency: 'USD', accountRef: { id: accountMap[account] } });
-        });
+        // Credit sales by type
+        if (salesByType[0] > 0 && accountMap['Zenoti service sales']) {
+          journalLines.push({ description: 'Service Sales', netAmount: salesByType[0], currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
+        }
+        if (salesByType[2] > 0 && accountMap['Zenoti product sales']) {
+          journalLines.push({ description: 'Product Sales', netAmount: salesByType[2], currency: 'USD', accountRef: { id: accountMap['Zenoti product sales'] } });
+        }
+        if (salesByType[3] > 0 && accountMap['membership revenue account']) {
+          journalLines.push({ description: 'Membership Revenue', netAmount: salesByType[3], currency: 'USD', accountRef: { id: accountMap['membership revenue account'] } });
+        }
+        if (salesByType[4] > 0 && accountMap['Zenoti package liability account']) {
+          journalLines.push({ description: 'Package Liability', netAmount: salesByType[4], currency: 'USD', accountRef: { id: accountMap['Zenoti package liability account'] } });
+        }
+        if (salesByType[6] > 0 && accountMap['Zenoti gift card liability account']) {
+          journalLines.push({ description: 'Gift Card Liability', netAmount: salesByType[6], currency: 'USD', accountRef: { id: accountMap['Zenoti gift card liability account'] } });
+        }
         // Debit refunds
         refunds.forEach(tx => {
           const amount = tx.total_collection || 0;
