@@ -225,7 +225,7 @@ app.post('/api/sync', async (req, res) => {
         let netSales = totalSales - totalRefunds;
         let netCollections = totalPayments + totalRedemptions - totalRefundPayments;
         let dueAmount = netSales - netCollections; // Positive if sales > collections, negative if collections > sales
-        console.log(`For ${date}: netSales ${netSales}, netCollections ${netCollections}, dueAmount ${dueAmount}`);
+        console.log(`For ${date}: totalSales ${totalSales}, totalRefunds ${totalRefunds}, totalPayments ${totalPayments}, totalRedemptions ${totalRedemptions}, totalRefundPayments ${totalRefundPayments}, netSales ${netSales}, netCollections ${netCollections}, dueAmount ${dueAmount}`);
 
         const journalLines = [];
         // Credit sales by type
@@ -292,7 +292,8 @@ app.post('/api/sync', async (req, res) => {
         });
         // Add due amount (debit if sales > collections, credit if collections > sales)
         if (dueAmount !== 0 && accountMap['Due Amount']) {
-          journalLines.push({ description: 'Due Amount', netAmount: dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
+          const dueAmountEntry = dueAmount; // Use raw dueAmount for correct sign
+          journalLines.push({ description: 'Due Amount', netAmount: dueAmountEntry, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
           // No offset needed; due amount balances the journal
         }
 
@@ -300,6 +301,7 @@ app.post('/api/sync', async (req, res) => {
           console.log(`Journal Lines for ${date}: ${JSON.stringify(journalLines)}`);
           const totalDebit = journalLines.filter(line => line.netAmount < 0).reduce((sum, line) => sum + -line.netAmount, 0);
           const totalCredit = journalLines.filter(line => line.netAmount > 0).reduce((sum, line) => sum + line.netAmount, 0);
+          console.log(`For ${date}: Individual Debits ${journalLines.filter(line => line.netAmount < 0).map(line => -line.netAmount)}, Individual Credits ${journalLines.filter(line => line.netAmount > 0).map(line => line.netAmount)}`);
           console.log(`For ${date}: Total Debits ${totalDebit}, Total Credits ${totalCredit}`);
           if (Math.abs(totalDebit - totalCredit) > 0.01) { // Allow for minor rounding differences
             throw new Error(`Journal for ${date} is unbalanced: Debits ${totalDebit}, Credits ${totalCredit}`);
