@@ -113,10 +113,16 @@ app.post('/api/sync', async (req, res) => {
     };
 
     let accountMap;
-    const accountsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/data/accounts`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-    console.log(`Accounts API response status: ${accountsResponse.status}, URL: https://api.codat.io/companies/${companyId}/data/accounts`);
-    const existingAccounts = accountsResponse.data.results || [];
-    console.log('Existing Accounts:', JSON.stringify(existingAccounts)); // Log to verify account presence
+    let allAccounts = [];
+    let accountsNextUrl = `https://api.codat.io/companies/${companyId}/data/accounts?page=1&pageSize=100`;
+    while (accountsNextUrl) {
+      const accountsResponse = await axios.get(accountsNextUrl, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+      console.log(`Accounts API response status: ${accountsResponse.status}, URL: ${accountsNextUrl}`);
+      allAccounts = allAccounts.concat(accountsResponse.data.results || []);
+      accountsNextUrl = accountsResponse.data._links?.next?.href;
+      if (accountsNextUrl && !accountsNextUrl.startsWith('http')) accountsNextUrl = `https://api.codat.io${accountsNextUrl}`;
+    }
+    const existingAccounts = allAccounts;
     const requiredAccounts = {
       sales: { 'Zenoti service sales': { type: 'Income' }, 'Zenoti product sales': { type: 'Income' }, 'membership revenue account': { type: 'Income' }, 'Zenoti package liability account': { type: 'Liability' }, 'Zenoti gift card liability account': { type: 'Liability' } },
       collections: { 'Zenoti undeposited cash funds': { type: 'Asset' }, 'Zenoti undeposited card payment': { type: 'Asset' }, 'Zenoti package liability': { type: 'Liability' }, 'Membership redemptions': { type: 'Income' } },
@@ -125,7 +131,7 @@ app.post('/api/sync', async (req, res) => {
     accountMap = {};
     for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections, ...requiredAccounts.due })) {
       const normalizedName = accountName.toLowerCase().trim();
-      let account = existingAccounts.find(a => (a.name && a.name.toLowerCase().trim() === normalizedName) || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
+      let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName);
       if (!account) {
         const category = categoryMap[type];
         if (!category || !validCategories.includes(category)) throw new Error(`Invalid category ${category}`);
@@ -133,42 +139,31 @@ app.post('/api/sync', async (req, res) => {
           name: accountName, description: `Account for ${accountName}`, fullyQualifiedCategory: category, fullyQualifiedName: accountName, currency: 'USD', currentBalance: 0, type, status: 'Active'
         }, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
         console.log(`Account creation response status: ${createResponse.status}, URL: https://api.codat.io/companies/${companyId}/connections/${connectionId}/push/accounts, pushOperationKey: ${createResponse.data.pushOperationKey}`);
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Reduced delay to 10 seconds
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Reduced initial delay to 5 seconds
         let operationStatus = 'Pending';
         let attempt = 0;
-        const maxAttempts = 10; // Reduced to 10 attempts
-        const startTime = Date.now();
-        const maxDuration = 60000; // 60-second max duration
-        while (operationStatus === 'Pending' && attempt < maxAttempts && (Date.now() - startTime) < maxDuration) {
-          await new Promise(resolve => setTimeout(resolve, 3000)); // Reduced wait to 3 seconds
+        let waitTime = 2000; // Initial wait time in ms
+        while (operationStatus === 'Pending' && attempt < 5) { // Reduced to 5 attempts
+          await new Promise(resolve => setTimeout(resolve, waitTime));
           try {
-            const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-            console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
+            const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+            console.log(`Operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, pushOperationKey: ${createResponse.data.pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
             operationStatus = operationResponse.data.status;
-            if (operationStatus === 'Success') {
-              account = operationResponse.data.results?.data;
-            } else if (operationStatus === 'Failed' && operationResponse.data.errorMessage && operationResponse.data.errorMessage.includes('already exists')) {
-              // Re-fetch accounts to ensure latest data
-              const updatedAccountsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/data/accounts`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-              const updatedAccounts = updatedAccountsResponse.data.results || [];
-              console.log('Updated Existing Accounts:', JSON.stringify(updatedAccounts));
-              account = updatedAccounts.find(a => (a.name && a.name.toLowerCase().trim() === normalizedName) || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
-              break;
-            }
+            if (operationStatus === 'Success') account = operationResponse.data.results?.data;
           } catch (error) {
             if (error.response?.status === 404) {
-              console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}`);
-              continue; // Retry on 404
+              console.warn(`Operation not found yet, retrying... Error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}`);
+              waitTime *= 2; // Exponential backoff
+              continue;
             } else {
-              console.error(`Operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${createResponse.data.pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
+              console.error(`Operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${createResponse.data.pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
               break;
             }
           }
           attempt++;
         }
         if (!account) {
-          console.warn(`Account ${accountName} creation timed out or failed, proceeding with existing check`);
-          account = existingAccounts.find(a => (a.name && a.name.toLowerCase().trim() === normalizedName) || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
+          console.warn(`Account ${accountName} creation pending, proceeding with sync. Manual verification recommended.`);
         }
       }
       if (account) {
@@ -316,12 +311,12 @@ app.post('/api/sync', async (req, res) => {
           while (journalOperationStatus === 'Pending' && attempt < 10) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             try {
-              const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/${pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
-              console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
+              const operationResponse = await axios.get(`https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+              console.log(`Journal operation status response: ${operationResponse.status}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Data: ${JSON.stringify(operationResponse.data)}`);
               journalOperationStatus = operationResponse.data.status;
               if (journalOperationStatus === 'Success') syncedDetails.push({ date, totalAmount: totalDebit, journalEntryId: operationResponse.data.data?.id || pushOperationKey });
             } catch (error) {
-              console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
+              console.error(`Journal operation status error: ${error.message}, URL: https://api.codat.io/companies/${companyId}/push/operations/${pushOperationKey}, Response: ${JSON.stringify(error.response?.data)}`);
               break;
             }
             attempt++;
