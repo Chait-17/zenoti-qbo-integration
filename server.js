@@ -150,6 +150,9 @@ app.post('/api/sync', async (req, res) => {
         }
       }
       accountMap[accountName] = account?.id || null;
+      if (!accountMap[accountName]) {
+        throw new Error(`Account ${accountName} not found or creation failed`);
+      }
     }
 
     const syncedDetails = [];
@@ -223,7 +226,7 @@ app.post('/api/sync', async (req, res) => {
           if (accountMap['Zenoti undeposited cash funds'] && amount > 0) {
             journalLines.push({ description: 'Refund', netAmount: -amount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
             // Credit to offset refund (e.g., reduce sales or liability)
-            journalLines.push({ description: 'Refund Offset', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } }); // Adjust account as needed
+            journalLines.push({ description: 'Refund Offset', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
           }
         });
         // Debit payments based on payment method and credit receivables
@@ -234,9 +237,9 @@ app.post('/api/sync', async (req, res) => {
               // Map payment type to account
               let paymentAccount;
               if (payment.type === 'CC') {
-                paymentAccount = accountMap['Zenoti undeposited card payment']; // Debit card payments
+                paymentAccount = accountMap['Zenoti undeposited card payment'];
               } else if (payment.type === 'Cash' || (salesData.some(s => s.payment_type === 'Cash' && s.invoice_no === tx.invoice_no))) {
-                paymentAccount = accountMap['Zenoti undeposited cash funds']; // Debit cash payments
+                paymentAccount = accountMap['Zenoti undeposited cash funds'];
               } else {
                 paymentAccount = accountMap['Zenoti undeposited cash funds']; // Default to cash if unknown
               }
