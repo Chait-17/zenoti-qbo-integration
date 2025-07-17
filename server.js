@@ -254,7 +254,7 @@ app.post('/api/sync', async (req, res) => {
             journalLines.push({ description: 'Refund Offset', netAmount: amount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
           }
         });
-        // Process payments
+        // Process payments (debit asset/liability, no counter entry needed)
         payments.forEach(tx => {
           tx.items[0].payments.forEach(payment => {
             const amount = payment.amount || 0;
@@ -269,6 +269,7 @@ app.post('/api/sync', async (req, res) => {
               }
               if (paymentAccount) {
                 journalLines.push({ description: `Payment (${payment.type} ${payment.detail_type})`, netAmount: -amount, currency: 'USD', accountRef: { id: paymentAccount } });
+                // No "Payment Received" counter entry; balance handled by due amount
               }
             }
           });
@@ -291,14 +292,8 @@ app.post('/api/sync', async (req, res) => {
         });
         // Add due amount (debit if sales > collections, credit if collections > sales)
         if (dueAmount !== 0 && accountMap['Due Amount']) {
-          const dueAmountEntry = dueAmount > 0 ? dueAmount : -dueAmount;
-          journalLines.push({ description: 'Due Amount', netAmount: dueAmountEntry, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
-          // Offset with sales account for debit, collections account for credit
-          if (dueAmount > 0) {
-            journalLines.push({ description: 'Due Amount Offset', netAmount: -dueAmount, currency: 'USD', accountRef: { id: accountMap['Zenoti service sales'] } });
-          } else {
-            journalLines.push({ description: 'Due Amount Offset', netAmount: dueAmount, currency: 'USD', accountRef: { id: accountMap['Zenoti undeposited cash funds'] } });
-          }
+          journalLines.push({ description: 'Due Amount', netAmount: dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
+          // No offset needed; due amount balances the journal
         }
 
         if (journalLines.length > 0) {
