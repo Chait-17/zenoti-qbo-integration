@@ -116,6 +116,7 @@ app.post('/api/sync', async (req, res) => {
     const accountsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/data/accounts`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
     console.log(`Accounts API response status: ${accountsResponse.status}, URL: https://api.codat.io/companies/${companyId}/data/accounts`);
     const existingAccounts = accountsResponse.data.results || [];
+    console.log('Existing Accounts:', JSON.stringify(existingAccounts)); // Log to verify account presence
     const requiredAccounts = {
       sales: { 'Zenoti service sales': { type: 'Income' }, 'Zenoti product sales': { type: 'Income' }, 'membership revenue account': { type: 'Income' }, 'Zenoti package liability account': { type: 'Liability' }, 'Zenoti gift card liability account': { type: 'Liability' } },
       collections: { 'Zenoti undeposited cash funds': { type: 'Asset' }, 'Zenoti undeposited card payment': { type: 'Asset' }, 'Zenoti package liability': { type: 'Liability' }, 'Membership redemptions': { type: 'Income' } },
@@ -124,7 +125,7 @@ app.post('/api/sync', async (req, res) => {
     accountMap = {};
     for (const [accountName, { type }] of Object.entries({ ...requiredAccounts.sales, ...requiredAccounts.collections, ...requiredAccounts.due })) {
       const normalizedName = accountName.toLowerCase().trim();
-      let account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
+      let account = existingAccounts.find(a => (a.name && a.name.toLowerCase().trim() === normalizedName) || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
       if (!account) {
         const category = categoryMap[type];
         if (!category || !validCategories.includes(category)) throw new Error(`Invalid category ${category}`);
@@ -147,7 +148,11 @@ app.post('/api/sync', async (req, res) => {
             if (operationStatus === 'Success') {
               account = operationResponse.data.results?.data;
             } else if (operationStatus === 'Failed' && operationResponse.data.errorMessage && operationResponse.data.errorMessage.includes('already exists')) {
-              account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
+              // Re-fetch accounts to ensure latest data
+              const updatedAccountsResponse = await axios.get(`https://api.codat.io/companies/${companyId}/data/accounts`, { headers: { 'Authorization': `Basic ${codatApiKey}`, 'Content-Type': 'application/json' } });
+              const updatedAccounts = updatedAccountsResponse.data.results || [];
+              console.log('Updated Existing Accounts:', JSON.stringify(updatedAccounts));
+              account = updatedAccounts.find(a => (a.name && a.name.toLowerCase().trim() === normalizedName) || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
               break;
             }
           } catch (error) {
@@ -163,7 +168,7 @@ app.post('/api/sync', async (req, res) => {
         }
         if (!account) {
           console.warn(`Account ${accountName} creation timed out or failed, proceeding with existing check`);
-          account = existingAccounts.find(a => a.name.toLowerCase().trim() === normalizedName || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
+          account = existingAccounts.find(a => (a.name && a.name.toLowerCase().trim() === normalizedName) || (a.fullyQualifiedName && a.fullyQualifiedName.toLowerCase().trim() === normalizedName));
         }
       }
       if (account) {
