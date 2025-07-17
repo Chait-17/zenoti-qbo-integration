@@ -292,8 +292,7 @@ app.post('/api/sync', async (req, res) => {
         });
         // Add due amount (debit if sales > collections, credit if collections > sales)
         if (dueAmount !== 0 && accountMap['Due Amount']) {
-          const dueAmountEntry = dueAmount; // Use raw dueAmount for correct sign
-          journalLines.push({ description: 'Due Amount', netAmount: dueAmountEntry, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
+          journalLines.push({ description: 'Due Amount', netAmount: -dueAmount, currency: 'USD', accountRef: { id: accountMap['Due Amount'] } });
           // No offset needed; due amount balances the journal
         }
 
